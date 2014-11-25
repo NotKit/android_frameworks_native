@@ -31,7 +31,7 @@ LOCAL_SRC_FILES:= 	       \
 	EGL/Loader.cpp 	       \
 #
 
-LOCAL_SHARED_LIBRARIES += libbinder libcutils libutils liblog libui
+LOCAL_SHARED_LIBRARIES += libbinder libcutils libutils liblog libui libdsyscalls
 LOCAL_MODULE:= libEGL
 LOCAL_LDFLAGS += -Wl,--exclude-libs=ALL
 LOCAL_SHARED_LIBRARIES += libdl
@@ -84,7 +84,7 @@ LOCAL_SRC_FILES:= 		\
 #
 
 LOCAL_CLANG := false
-LOCAL_SHARED_LIBRARIES += libcutils liblog libEGL
+LOCAL_SHARED_LIBRARIES += libcutils liblog libEGL libdsyscalls
 LOCAL_MODULE:= libGLESv1_CM
 
 LOCAL_SHARED_LIBRARIES += libdl
@@ -113,7 +113,7 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_CLANG := false
 LOCAL_ARM_MODE := arm
-LOCAL_SHARED_LIBRARIES += libcutils libutils liblog libEGL
+LOCAL_SHARED_LIBRARIES += libcutils libutils liblog libEGL libdsyscalls
 LOCAL_MODULE:= libGLESv2
 
 LOCAL_SHARED_LIBRARIES += libdl
