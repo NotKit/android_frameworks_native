@@ -31,6 +31,10 @@
 #include <inttypes.h>
 #include <sstream>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include "mediatek/MtkHwc.h"
+#endif
+
 using namespace std::chrono_literals;
 
 static bool operator==(const hwc_color_t& lhs, const hwc_color_t& rhs) {
@@ -2474,8 +2478,17 @@ bool HWC2On1Adapter::prepareAllDisplays()
     ALOGV("Calling HWC1 prepare");
     {
         ATRACE_NAME("HWC1 prepare");
+
+#ifdef MTK_AOSP_ENHANCEMENT
+        MtkHwc::getInstance().onPrepareHead(mHwc1Contents.size(), mHwc1Contents.data());
+#endif
+
         mHwc1Device->prepare(mHwc1Device, mHwc1Contents.size(),
                 mHwc1Contents.data());
+
+#ifdef MTK_AOSP_ENHANCEMENT
+        MtkHwc::getInstance().onPrepareTail(mHwc1Contents.size(), mHwc1Contents.data());
+#endif
     }
 
     for (size_t c = 0; c < mHwc1Contents.size(); ++c) {

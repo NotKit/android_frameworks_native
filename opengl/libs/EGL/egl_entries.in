@@ -96,3 +96,7 @@ EGL_ENTRY(EGLBoolean, eglAwakenProcessIMG, void)
 
 EGL_ENTRY(EGLBoolean, eglSwapBuffersWithDamageKHR, EGLDisplay, EGLSurface, EGLint *, EGLint)
 EGL_ENTRY(EGLBoolean, eglSetDamageRegionKHR, EGLDisplay, EGLSurface, EGLint *, EGLint)
+
+/* MTK AOSP ENHANCEMENT */
+
+EGL_ENTRY(EGLBoolean, eglGvrFrontBuffer, const EGLSurface)

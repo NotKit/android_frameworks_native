@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,6 +77,10 @@ protected:
 
     virtual size_t getMaxTextureSize() const;
     virtual size_t getMaxViewportDims() const;
+#ifdef MTK_AOSP_ENHANCEMENT
+protected:
+    virtual void setupLayerProtectImage();
+#endif
 };
 
 // ---------------------------------------------------------------------------

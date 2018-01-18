@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  ** Copyright 2007, The Android Open Source Project
  **
  ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +58,7 @@
 #include "egl_object.h"
 #include "egl_tls.h"
 #include "egldefs.h"
+#include "mtk_misc.h"
 
 using namespace android;
 
@@ -224,6 +230,13 @@ static const extention_map_t sExtensionMap[] = {
             (__eglMustCastToProperFunctionPointerType)&eglGetFrameTimestampsANDROID },
     { "eglQueryTimestampSupportedANDROID",
             (__eglMustCastToProperFunctionPointerType)&eglQueryTimestampSupportedANDROID },
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    { "egl_GVR_FrontBuffer",
+            (__eglMustCastToProperFunctionPointerType)&egl_GVR_FrontBuffer },
+    { "EGL_SEC_getClientBufferForFrontBuffer",
+            (__eglMustCastToProperFunctionPointerType)&EGL_SEC_getClientBufferForFrontBuffer },
+#endif
 };
 
 /*
@@ -506,7 +519,8 @@ EGLSurface eglCreateWindowSurface(  EGLDisplay dpy, EGLConfig config,
             if (colorDepth <= 16) {
                 format = HAL_PIXEL_FORMAT_RGB_565;
             } else {
-                format = HAL_PIXEL_FORMAT_RGBX_8888;
+                if(MTK_isRGB888Supported()) format = HAL_PIXEL_FORMAT_RGB_888;
+                else format = HAL_PIXEL_FORMAT_RGBX_8888;
             }
         }
 
@@ -529,6 +543,16 @@ EGLSurface eglCreateWindowSurface(  EGLDisplay dpy, EGLConfig config,
             }
         }
 
+#if ANDROID_RECORDABLE
+        EGLint ori_format = format;
+        if(cnx->egl.eglGetConfigAttrib(iDpy, config, EGL_NATIVE_VISUAL_ID,
+            &format)) {
+            if (format != HAL_PIXEL_FORMAT_YV12) {
+                format = ori_format;
+            }
+            ALOGW("[ANDROID_RECORDABLE] format: %x", format);
+        }
+#endif
         if (format != 0) {
             int err = native_window_set_buffers_format(window, format);
             if (err != 0) {
@@ -640,6 +664,14 @@ EGLBoolean eglQuerySurface( EGLDisplay dpy, EGLSurface surface,
         return setError(EGL_BAD_SURFACE, EGL_FALSE);
 
     egl_surface_t const * const s = get_surface(surface);
+    if (attribute == EGL_IS_INVALID_MTK)
+    {
+        int tmp_w;
+        EGLNativeWindowType win = (EGLNativeWindowType)s->win.get();
+
+        *value = s->win->query(win, NATIVE_WINDOW_HEIGHT, &tmp_w) != 0 ? 1 : 0;
+        return EGL_TRUE;
+    }
     return s->cnx->egl.eglQuerySurface(
             dp->disp.dpy, s->surface, attribute, value);
 }
@@ -815,6 +847,20 @@ EGLBoolean eglMakeCurrent(  EGLDisplay dpy, EGLSurface draw,
         // this will ALOGE the error
         egl_connection_t* const cnx = &gEGLImpl;
         result = setError(cnx->egl.eglGetError(), EGL_FALSE);
+
+        // MTK {{{{
+        if (NULL != cur_c)
+        {
+            SurfaceRef _cur_r(get_surface(cur_c->read));
+            SurfaceRef _cur_d(get_surface(cur_c->draw));
+
+            cur_c->read = EGL_NO_SURFACE;
+            cur_c->draw = EGL_NO_SURFACE;
+
+            _cur_r.release();
+            _cur_d.release();
+        }
+        // MTK }}}}
     }
     return result;
 }
@@ -2120,3 +2166,40 @@ EGLBoolean eglQueryTimestampSupportedANDROID(EGLDisplay dpy, EGLSurface surface,
             return EGL_FALSE;
     }
 }
+
+#ifdef MTK_AOSP_ENHANCEMENT
+void* egl_GVR_FrontBuffer(const EGLSurface surface)
+{
+    clearError();
+    ALOGW("[MTKME2] [egl_GVR_FrontBuffer] [+]: surface(%p)\n", surface);
+
+    int fbr_egl_enabled = 1;
+    char prop_value[128];
+
+    if (property_get("mtk.egl.fbr.enable", prop_value, "0") > 0) {
+        fbr_egl_enabled = atoi(prop_value);
+    }
+
+    if (!fbr_egl_enabled) {
+        ALOGW("[MTKME2] [egl_GVR_FrontBuffer] [-]: return NULL! FBR is not enabled, fbr_egl_enabled(%d)\n", fbr_egl_enabled);
+        return NULL;
+    }
+
+    egl_surface_t const * const s = get_surface(surface);
+    if (s->cnx->egl.eglGvrFrontBuffer) {
+        if(s->cnx->egl.eglGvrFrontBuffer(s->surface)) {
+            ALOGW("[MTKME2] [egl_GVR_FrontBuffer] [-]: return surface(%p)\n", surface);
+            return surface;
+        }
+    }
+
+    ALOGW("[MTKME2] [egl_GVR_FrontBuffer] [-]: return NULL!\n");
+    return NULL;
+}
+
+void* EGL_SEC_getClientBufferForFrontBuffer(EGLSurface surface)
+{
+    ALOGW("[MTKME2] [EGL_SEC_getClientBufferForFrontBuffer]: surface(%p)\n", surface);
+    return NULL;
+}
+#endif

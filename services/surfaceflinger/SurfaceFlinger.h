@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,6 +65,13 @@
 #include "DisplayHardware/HWComposer.h"
 #include "Effects/Daltonizer.h"
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include "mediatek/SurfaceFlingerWatchDog.h"
+#ifdef MTK_GLOBAL_PQ_SUPPORT
+#include "IPQService.h"
+#endif
+#endif
+
 #include <map>
 #include <string>
 
@@ -76,6 +88,11 @@ class LayerDim;
 class Surface;
 class RenderEngine;
 class EventControlThread;
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef MTK_EMULATOR_SUPPORT
+class Resync;
+#endif
+#endif
 
 // ---------------------------------------------------------------------------
 
@@ -150,6 +167,10 @@ private:
     friend class DisplayEventConnection;
     friend class Layer;
     friend class MonitoredProducer;
+#ifdef MTK_AOSP_ENHANCEMENT
+    friend class DisplayDevice;
+    friend class MtkHwc;
+#endif
 
     // This value is specified in number of frames.  Log frame stats at most
     // every half hour.
@@ -587,6 +608,102 @@ private:
     };
     mutable Mutex mBufferingStatsMutex;
     std::unordered_map<std::string, BufferingStats> mBufferingStats;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+private:
+    // boot time info
+    bool mBootAnimationEnabled;
+
+    // used to avoid race condition between handleMessageRefresh() and dumpAllLocked()
+    mutable Mutex mDumpLock;
+
+    // for debug
+    void setMTKProperties();
+    void setMTKProperties(String8 &result);
+
+    // decide to run boot animation
+    void checkEnableBootAnim();
+
+    // set boot done msg
+    void bootProf(int start) const;
+
+    // for S3D feature
+    bool doComposeS3D(const sp<const DisplayDevice>& hw, const Region& dirty);
+
+    // for DisplayDevice reg/unreg Virtual Display to WDT
+    ssize_t registerVirtualDisplay(const sp<ANativeWindow>& nativeWindow, const String8& info);
+    ssize_t unregisterVirtualDisplay(const sp<ANativeWindow>& nativeWindow);
+
+public:
+    // helper class for collect related property settings
+    struct PropertiesState {
+        PropertiesState()
+            : mHwRotation(0)
+            , mLogRepaint(false)
+            , mLogTransaction(false)
+            , mLineG3D(false)
+            , mLineSS(false)
+            , mDumpScreenShot(0)
+            , mDelayTime(0)
+            , mDebugSkipComp(false)
+            , mAppVSyncOffset(0)
+            , mSfVSyncOffset(0)
+            , mBqCount(3)
+        { }
+
+        // for phyical panel rotation info
+        int mHwRotation;
+
+        // sf repaint log info
+        bool mLogRepaint;
+
+        // log layer state transaction
+        bool mLogTransaction;
+
+        // debug G3D render
+        bool mLineG3D;
+
+        // debug screenshot
+        bool mLineSS;
+
+        // debug screen shot result, enabled if value > 0, and increases after each dump
+        uint32_t mDumpScreenShot;
+
+        // for enabling slow motion
+        uint32_t mDelayTime;
+
+        // debug composition enhancement
+        bool mDebugSkipComp;
+
+        // for VSyncOffset
+        int64_t mAppVSyncOffset;
+        int64_t mSfVSyncOffset;
+
+        // for number of buffer in a BufferQueue
+        int mBqCount;
+    };
+    static PropertiesState sPropertiesState;
+
+    // for SF watchdog
+    SFWatchDog mMessageWDT;
+
+    bool getBootFinished() { return mBootFinished; }
+
+#ifdef MTK_GLOBAL_PQ_SUPPORT
+private:
+    bool isGlobalPQEnabled();
+
+    sp<Layer> selectPQLayerSortedByZ(const Vector< sp<Layer> >& layers);
+
+    void checkAndSetPQFlagForDisplay();
+    sp<Layer> checkAndSetPQFlagForCapture(
+        const sp<const DisplayDevice>& hw,
+        const sp<IGraphicBufferProducer>& producer,
+        const uint32_t& minLayerZ, const uint32_t& maxLayerZ);
+
+    sp<IPQService> mPQService;
+#endif
+#endif
 };
 
 }; // namespace android

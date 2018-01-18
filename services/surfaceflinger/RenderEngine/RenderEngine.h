@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +33,12 @@
 
 #define EGL_NO_CONFIG ((EGLConfig)0)
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#define DRM_IMAGE_PATH "/vendor/media/images/drm_disable_icon.png"
+#include <utils/Mutex.h>
+#include <utils/RefBase.h>
+#endif
+
 // ---------------------------------------------------------------------------
 namespace android {
 // ---------------------------------------------------------------------------
@@ -37,6 +48,9 @@ class Rect;
 class Region;
 class Mesh;
 class Texture;
+#ifdef MTK_AOSP_ENHANCEMENT
+class DisplayDevice;
+#endif
 
 class RenderEngine {
     enum GlesVersion {
@@ -122,6 +136,33 @@ public:
 
     EGLConfig getEGLConfig() const;
     EGLContext getEGLContext() const;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+protected:
+    // for protect image texture control
+    Mutex    mProtectImageLock;
+    uint32_t mProtectImageTexName;
+    int32_t  mProtectImageWidth;
+    int32_t  mProtectImageHeight;
+
+    // bind to protect image texture, create a new one if now not exist
+    uint32_t createAndBindProtectImageTexLocked();
+
+public:
+    // for protect image texture clear, MUST set to delete in SF main thread
+    uint32_t getAndClearProtectImageTexName();
+
+    // setup for protect layer display
+    virtual void setupLayerProtectImage() = 0;
+
+    // draw debugging line to the given DisplayDevice
+    void drawDebugLine(const sp<const DisplayDevice>& hw,
+            uint32_t color = 0xFFFFFFFF, uint32_t steps = 32) const;
+
+    //for S3D feature
+    void adjustViewPortS3D(const sp<const DisplayDevice>& hw);
+    void adjustScissorS3D(const sp<const DisplayDevice>& hw);
+#endif
 };
 
 // ---------------------------------------------------------------------------

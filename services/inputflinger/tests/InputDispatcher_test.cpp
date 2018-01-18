@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,6 +99,12 @@ private:
     virtual bool checkInjectEventsPermissionNonReentrant(int32_t, int32_t) {
         return false;
     }
+
+    /// M: KeyDispatchingTimeout predump mechanism @{
+    virtual void notifyPredump(const sp<InputApplicationHandle>& inputApplicationHandle,
+            const sp<InputWindowHandle>& inputWindowHandle, int32_t pid, int32_t message) {
+    }
+    /// KeyDispatchingTimeout predump mechanism @}
 };
 
 

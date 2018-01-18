@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  **
  ** Copyright 2012 The Android Open Source Project
  **
@@ -75,7 +80,12 @@ FramebufferSurface::FramebufferSurface(HWComposer& hwc, int disp,
     ALOGV("Creating for display %d", disp);
 #endif
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // add type info in name for different physical types
+    mName = String8::format("FrameBufferSurface_%d", mDisplayType);
+#else
     mName = "FramebufferSurface";
+#endif
     mConsumer->setConsumerName(mName);
     mConsumer->setConsumerUsageBits(GRALLOC_USAGE_HW_FB |
                                        GRALLOC_USAGE_HW_RENDER |

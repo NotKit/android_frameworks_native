@@ -181,10 +181,24 @@ nsecs_t SurfaceFlingerConsumer::computeExpectedPresent(const DispSync& dispSync)
     // vsync and reported-vsync (PRESENT_TIME_OFFSET_FROM_VSYNC_NS), so
     // we don't need to factor that in here.  Pad a little to avoid
     // weird effects if apps might be requesting times right on the edge.
+#ifdef MTK_AOSP_ENHANCEMENT
+    // Here will check the value of VSYNC_EVENT_PHASE_OFFSET_NS.
+    // When VSYNC_EVENT_PHASE_OFFSET_NS is not 0, it causes that a section is not reachable.
+    // For the reason, we allocate correct initial value directly.
+    nsecs_t extraPadding = 1000000;
+#if (VSYNC_EVENT_PHASE_OFFSET_NS != 0)
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (dispSync.getVsyncOffset()) {
+        extraPadding = 0;
+    }
+#endif
+#endif
+#else
     nsecs_t extraPadding = 0;
     if (VSYNC_EVENT_PHASE_OFFSET_NS == 0) {
         extraPadding = 1000000;        // 1ms (6% of 60Hz)
     }
+#endif
 
     return nextRefresh + extraPadding;
 }

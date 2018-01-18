@@ -629,6 +629,23 @@ int rm_dex(const char *path, const char *instruction_set)
     }
 }
 
+/// M: Add method to delete dex of vendor/operator/app after uninstalled.
+int rm_dex_cache(const char *path, const char *instruction_set) {
+    char dex_path[PKG_PATH_MAX];
+
+    if (!create_cache_path(dex_path, path, instruction_set)) return -1;
+
+    ALOGE("unlink %s\n", dex_path);
+    if (unlink(dex_path) < 0) {
+        if (errno != ENOENT) {
+            ALOGE("Couldn't unlink %s: %s\n", dex_path, strerror(errno));
+        }
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
 static void add_app_data_size(std::string& path, int64_t *codesize, int64_t *datasize,
         int64_t *cachesize) {
     DIR *d;

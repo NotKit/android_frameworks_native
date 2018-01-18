@@ -89,8 +89,10 @@ int main(int argc, char* const argv[])
         return 20;
     }
 
+    // N: Google code has not completed, but it has some side effect whiling
+    // process is leaving. (ALPS02793529)
     // TODO: block until a result is returned to MyResultReceiver.
     IBinder::shellCommand(service, STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, args,
-            new MyResultReceiver());
+            NULL);
     return 0;
 }

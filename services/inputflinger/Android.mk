@@ -1,3 +1,8 @@
+#
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
 # Copyright (C) 2013 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,11 +37,29 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libutils \
     libui \
-    libhardware_legacy
+    libhardware_legacy \
+    libdl
 
+ifeq ($(strip $(MTK_EMULATOR_SUPPORT)),yes)
+    LOCAL_CFLAGS += -DMTK_EMULATOR_SUPPORT
+endif
+
+ifneq ($(strip $(MTK_EMULATOR_SUPPORT)),yes)
+    LOCAL_SHARED_LIBRARIES +=libtouchfilter
+endif
+
+ifeq ($(strip $(MTK_DISPLAY_120HZ_SUPPORT)),yes)
+    LOCAL_SHARED_LIBRARIES += librrc
+    LOCAL_CFLAGS += -DMTK_DISPLAY_120HZ_SUPPORT
+endif
 
 # TODO: Move inputflinger to its own process and mark it hidden
 #LOCAL_CFLAGS += -fvisibility=hidden
+
+LOCAL_C_INCLUDES := \
+    external/openssl/include \
+    $(MTK_PATH_SOURCE)/hardware/perfservice/perfservicenative \
+    $(MTK_PATH_SOURCE)/hardware/rrc/inc
 
 LOCAL_CFLAGS += -Wno-unused-parameter
 

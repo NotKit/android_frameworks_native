@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +47,10 @@
 #ifdef USE_HWC2
 #include <memory>
 #endif
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <FpsCounter.h>
+#endif // MTK_AOSP_ENHANCEMENT
 
 struct ANativeWindow;
 
@@ -261,6 +270,33 @@ private:
     // current active color mode
     android_color_mode_t mActiveColorMode;
 #endif
+
+#ifdef MTK_AOSP_ENHANCEMENT
+private:
+    // debugging
+    void drawDebugLine() const;
+
+    int mHwOrientation;
+
+    // for performance check
+    mutable FpsCounter mFps;
+
+public:
+    // enum for S3D rendering control
+    enum {
+        eComposing2D           = 0x02,
+        eComposingS3DSBSLeft   = 0x0A,    //left or top S3D buffer
+        eComposingS3DSBSRight  = 0x0B,    //right or bottom S3D buffer
+        eComposingS3DTABTop    = 0x0C,    //left or top S3D buffer
+        eComposingS3DTABBottom = 0x0D,    //left or top S3D buffer
+    };
+    mutable int32_t mS3DPhase;
+
+    // correct geometry by device hw orientation
+    void correctSizeByHwOrientation(uint32_t &w, uint32_t &h) const;
+    void correctRotationByHwOrientation(Transform::orientation_flags &rotation) const;
+    void correctCropByHwOrientation(Rect& crop) const;
+#endif // MTK_AOSP_ENHANCEMENT
 };
 
 }; // namespace android

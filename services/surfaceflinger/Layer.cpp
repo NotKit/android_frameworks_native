@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2007 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,11 +58,28 @@
 
 #include <mutex>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <ui/gralloc_extra.h>
+#include <ui/DisplayInfo.h>
+#include <ui/GraphicBufferExtra.h>
+#include <cutils/log.h>
+
+#include "mediatek/MtkHwc.h"
+#endif
+
 #define DEBUG_RESIZE    0
 
 namespace android {
 
 // ---------------------------------------------------------------------------
+#ifdef MTK_AOSP_ENHANCEMENT
+#define LAYER_ATRACE_BUFFER(x, ...)                                                \
+    if (ATRACE_ENABLED()) {                                                     \
+        char ___traceBuf[256];                                                  \
+        snprintf(___traceBuf, sizeof(___traceBuf), x, ##__VA_ARGS__);           \
+        android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);             \
+    }
+#endif
 
 int32_t Layer::sSequence = 1;
 
@@ -99,6 +121,11 @@ Layer::Layer(SurfaceFlinger* flinger, const sp<Client>& client,
         mUpdateTexImageFailed(false),
         mAutoRefresh(false),
         mFreezePositionUpdates(false)
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+        ,mUINeedPQ(false),
+        mVideoNeedPQ(true),
+        mInWhiteList(false)
+#endif
 {
 #ifdef USE_HWC2
     ALOGV("Creating Layer %s", name.string());
@@ -169,6 +196,10 @@ void Layer::onFirstRef() {
     mProducer->setMaxDequeuedBufferCount(2);
 #endif
 
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    checkLayerInWhiteList();
+#endif
+
     const sp<const DisplayDevice> hw(mFlinger->getDefaultDisplayDevice());
     updateTransformHint(hw);
 }
@@ -187,6 +218,15 @@ Layer::~Layer() {
     }
     mFlinger->deleteTextureAsync(mTextureName);
     mFrameTracker.logAndResetStats(mName);
+#ifdef MTK_AOSP_ENHANCEMENT
+    // try to delete the protect image texture, if layer may use it
+    if (CC_UNLIKELY(isProtected())) {
+        uint32_t tex = mFlinger->getRenderEngine().getAndClearProtectImageTexName();
+        if (-1U != tex) {
+            mFlinger->deleteTextureAsync(tex);
+        }
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +239,10 @@ void Layer::onLayerDisplayed(const sp<Fence>& releaseFence) {
         return;
     }
     mSurfaceFlingerConsumer->setReleaseFence(releaseFence);
+
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    setPQForUI(false);
+#endif
 }
 #else
 void Layer::onLayerDisplayed(const sp<const DisplayDevice>& /* hw */,
@@ -207,6 +251,10 @@ void Layer::onLayerDisplayed(const sp<const DisplayDevice>& /* hw */,
         layer->onDisplayed();
         mSurfaceFlingerConsumer->setReleaseFence(layer->getAndResetReleaseFence());
     }
+
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    setPQForUI(false);
+#endif
 }
 #endif
 
@@ -386,7 +434,12 @@ Rect Layer::computeBounds(const Region& activeTransparentRegion) const {
     Rect win(s.active.w, s.active.h);
 
     if (!s.crop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!win.intersect(s.crop, &win))
+            win.clear();
+#else
         win.intersect(s.crop, &win);
+#endif
     }
     // subtract the transparent region and snap to the bounds
     return reduce(win, activeTransparentRegion);
@@ -590,6 +643,9 @@ void Layer::setGeometry(
     }
     const Transform& tr(displayDevice->getTransform());
     Rect transformedFrame = tr.transform(frame);
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    mDisplayFrame = transformedFrame;
+#endif
     auto error = hwcLayer->setDisplayFrame(transformedFrame);
     if (error != HWC2::Error::None) {
         ALOGE("[%s] Failed to set display frame [%d, %d, %d, %d]: %s (%d)",
@@ -625,7 +681,13 @@ void Layer::setGeometry(
         frame.clear();
     }
     const Transform& tr(hw->getTransform());
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    mDisplayFrame = tr.transform(frame);
+    layer.setFrame(mDisplayFrame);
+#else
     layer.setFrame(tr.transform(frame));
+#endif
+
     layer.setCrop(computeCrop(hw));
     layer.setPlaneAlpha(s.alpha);
 #endif
@@ -641,6 +703,9 @@ void Layer::setGeometry(
     const Transform bufferOrientation(mCurrentTransform);
     Transform transform(tr * s.active.transform * bufferOrientation);
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (!(transform.getOrientation() & Transform::ROT_INVALID))
+#endif
     if (mSurfaceFlingerConsumer->getTransformToDisplayInverse()) {
         /*
          * the code below applies the primary display's inverse transform to the
@@ -670,14 +735,19 @@ void Layer::setGeometry(
                 "%s (%d)", mName.string(), to_string(transform).c_str(),
                 to_string(error).c_str(), static_cast<int32_t>(error));
     }
-#else
+#else // USE_HWC2
     if (orientation & Transform::ROT_INVALID) {
         // we can only handle simple transformation
         layer.setSkip(true);
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (isDim()) {
+            layer.setTransform(orientation);
+        }
+#endif // MTK_AOSP_ENHANCEMENT
     } else {
         layer.setTransform(orientation);
     }
-#endif
+#endif // USE_HWC2
 }
 
 #ifdef USE_HWC2
@@ -700,6 +770,18 @@ void Layer::setPerFrameData(const sp<const DisplayDevice>& displayDevice) {
     Region visible = tr.transform(visibleRegion.intersect(viewport));
     auto hwcId = displayDevice->getHwcDisplayId();
     auto& hwcLayer = mHwcLayers[hwcId].layer;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    HwcValidateData& val_data = MtkHwc::getInstance().getHwcValidateData();
+    auto&& hwcLayerId = hwcLayer->getId();
+    std::shared_ptr<HwcValidateData::LayerData> layer_data(new HwcValidateData::LayerData());
+    layer_data->id = hwcLayerId;
+    layer_data->disp_id = hwcId;
+    layer_data->flags = 0;
+
+    val_data.layers[hwcLayerId] = layer_data;
+#endif
+
     auto error = hwcLayer->setVisibleRegion(visible);
     if (error != HWC2::Error::None) {
         ALOGE("[%s] Failed to set visible region: %s (%d)", mName.string(),
@@ -773,6 +855,12 @@ void Layer::setPerFrameData(const sp<const DisplayDevice>& displayDevice) {
                 mActiveBuffer->handle, to_string(error).c_str(),
                 static_cast<int32_t>(error));
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef USE_HWC2
+    // set dim flag if needed
+    getLayerOfHwcPrepareData(sequence)->flags |= isDim() ? HWC_DIM_LAYER : 0;
+#endif // USE_HWC2
+#endif // MTK_AOSP_ENHANCEMENT
 }
 #else
 void Layer::setPerFrameData(const sp<const DisplayDevice>& hw,
@@ -791,6 +879,13 @@ void Layer::setPerFrameData(const sp<const DisplayDevice>& hw,
     if (mSidebandStream.get()) {
         layer.setSidebandStream(mSidebandStream);
     } else {
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef USE_HWC2
+        // set dim flag if needed
+        getLayerOfHwcPrepareData(sequence)->flags |= isDim() ? HWC_DIM_LAYER : 0;
+#endif // USE_HWC2
+#endif // MTK_AOSP_ENHANCEMENT
+
         // NOTE: buffer can be NULL if the client never drew into this
         // layer yet, or if we ran out of memory
         layer.setBuffer(mActiveBuffer);
@@ -813,14 +908,24 @@ void Layer::updateCursorPosition(const sp<const DisplayDevice>& displayDevice) {
     // Here we're guaranteed that the layer's transform preserves rects
     Rect win(s.active.w, s.active.h);
     if (!s.crop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!win.intersect(s.crop, &win))
+            win.clear();
+#else
         win.intersect(s.crop, &win);
+#endif
     }
     // Subtract the transparent region and snap to the bounds
     Rect bounds = reduce(win, s.activeTransparentRegion);
     Rect frame(s.active.transform.transform(bounds));
     frame.intersect(displayDevice->getViewport(), &frame);
     if (!s.finalCrop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!frame.intersect(s.finalCrop, &frame))
+            frame.clear();
+#else
         frame.intersect(s.finalCrop, &frame);
+#endif
     }
     auto& displayTransform(displayDevice->getTransform());
     auto position = displayTransform.transform(frame);
@@ -862,14 +967,24 @@ Rect Layer::getPosition(
     // here we're guaranteed that the layer's transform preserves rects
     Rect win(s.active.w, s.active.h);
     if (!s.crop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!win.intersect(s.crop, &win))
+            win.clear();
+#else
         win.intersect(s.crop, &win);
+#endif
     }
     // subtract the transparent region and snap to the bounds
     Rect bounds = reduce(win, s.activeTransparentRegion);
     Rect frame(s.active.transform.transform(bounds));
     frame.intersect(hw->getViewport(), &frame);
     if (!s.finalCrop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!frame.intersect(s.finalCrop, &frame))
+            frame.clear();
+#else
         frame.intersect(s.finalCrop, &frame);
+#endif
     }
     const Transform& tr(hw->getTransform());
     return Rect(tr.transform(frame));
@@ -896,7 +1011,13 @@ void Layer::draw(const sp<const DisplayDevice>& hw) const {
 void Layer::onDraw(const sp<const DisplayDevice>& hw, const Region& clip,
         bool useIdentityTransform) const
 {
+#ifdef MTK_AOSP_ENHANCEMENT
+    String8 name("onDraw");
+    name.appendFormat("(%s)", mName.string());
+    ATRACE_NAME(name.string());
+#else
     ATRACE_CALL();
+#endif
 
     if (CC_UNLIKELY(mActiveBuffer == 0)) {
         // the texture has not been created yet, this Layer has
@@ -925,7 +1046,17 @@ void Layer::onDraw(const sp<const DisplayDevice>& hw, const Region& clip,
         }
         return;
     }
-
+#if defined(MTK_AOSP_ENHANCEMENT) && defined(MTK_GLOBAL_PQ_SUPPORT)
+    if (mUINeedPQ) {
+        sp<Fence> fence = mSurfaceFlingerConsumer->getCurrentFence();
+        if (fence->isValid()) {
+            status_t err = fence->waitForever("Layer::fence_before_pq");
+            if (err != NO_ERROR) {
+                ALOGE("error waiting fence: %d before do pq", err);
+            }
+        }
+    }
+#endif
     // Bind the current buffer to the GL texture, and wait for it to be
     // ready for us to draw into.
     status_t err = mSurfaceFlingerConsumer->bindTextureImage();
@@ -941,7 +1072,21 @@ void Layer::onDraw(const sp<const DisplayDevice>& hw, const Region& clip,
 
     if (!blackOutLayer) {
         // TODO: we could be more subtle with isFixedSize()
+#ifdef MTK_AOSP_ENHANCEMENT
+        bool isS3d = false;
+#ifdef USE_HWC2
+        // todo: s3d
+#else // USE_HWC2
+        const auto hwcId = hw->getHwcDisplayId();
+        if (hwcId >= 0) {
+            auto&& display = getDisplayOfHwcPrepareData(hw->getHwcDisplayId());
+            isS3d = (display->flags & HWC_IS_S3D_LAYER) > 0;
+        }
+#endif // USE_HWC2
+        const bool useFiltering = getFiltering() || needsFiltering(hw) || isFixedSize() || isS3d;
+#else // MTK_AOSP_ENHANCEMENT
         const bool useFiltering = getFiltering() || needsFiltering(hw) || isFixedSize();
+#endif // MTK_AOSP_ENHANCEMENT
 
         // Query the texture matrix given our current filtering mode.
         float textureMatrix[16];
@@ -985,6 +1130,13 @@ void Layer::onDraw(const sp<const DisplayDevice>& hw, const Region& clip,
 
         engine.setupLayerTexturing(mTexture);
     } else {
+#ifdef MTK_AOSP_ENHANCEMENT
+        char value[PROPERTY_VALUE_MAX];
+        property_get("debug.sf.no_security_img", value, "0");
+        if ((atoi(value) == 0) && (false == hw->isSecure()))
+            engine.setupLayerProtectImage();
+        else
+#endif
         engine.setupLayerBlackedOut();
     }
     drawWithOpenGL(hw, clip, useIdentityTransform);
@@ -1053,6 +1205,22 @@ void Layer::drawWithOpenGL(const sp<const DisplayDevice>& hw,
     texCoords[2] = vec2(right, 1.0f - bottom);
     texCoords[3] = vec2(right, 1.0f - top);
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifdef USE_HWC2
+    // todo: s3d
+#else // USE_HWC2
+    const auto hwcId = hw->getHwcDisplayId();
+    if (hwcId >= 0) {
+        auto&& display = getDisplayOfHwcPrepareData(hwcId);
+        if (display != nullptr) {
+            auto&& flags = display->flags;
+            if ((flags & HWC_IS_S3D_LAYER) > 0) {
+                adjustTexCoord(hw, texCoords);
+            }
+        }
+    }
+#endif // USE_HWC2
+#endif // MTK_AOSP_ENHANCEMENT
     RenderEngine& engine(mFlinger->getRenderEngine());
     engine.setupLayerBlending(mPremultipliedAlpha, isOpaque(s), s.alpha);
     engine.drawMesh(mMesh);
@@ -1237,7 +1405,12 @@ void Layer::computeGeometry(const sp<const DisplayDevice>& hw, Mesh& mesh,
     const uint32_t hw_h = hw->getHeight();
     Rect win(s.active.w, s.active.h);
     if (!s.crop.isEmpty()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (!win.intersect(s.crop, &win))
+            win.clear();
+#else
         win.intersect(s.crop, &win);
+#endif
     }
     // subtract the transparent region and snap to the bounds
     win = reduce(win, s.activeTransparentRegion);
@@ -1560,6 +1733,15 @@ uint32_t Layer::doTransaction(uint32_t flags) {
 
 void Layer::commitTransaction(const State& stateToCommit) {
     mDrawingState = stateToCommit;
+#ifdef MTK_AOSP_ENHANCEMENT
+    // dump state result after transaction committed
+    if (CC_UNLIKELY(mFlinger->sPropertiesState.mLogTransaction)) {
+        String8 result;
+        Colorizer colorizer(false);
+        Layer::dump(result, colorizer);
+        ALOGD("%s", result.string());
+    }
+#endif
 }
 
 uint32_t Layer::getTransactionFlags(uint32_t flags) {
@@ -1740,6 +1922,12 @@ bool Layer::shouldPresentNow(const DispSync& dispSync) const {
     ALOGW_IF(!isPlausible, "[%s] Timestamp %" PRId64 " seems implausible "
             "relative to expectedPresent %" PRId64, mName.string(), timestamp,
             expectedPresent);
+#ifdef MTK_AOSP_ENHANCEMENT
+    char ___traceBuf[128];
+    snprintf(___traceBuf, sizeof(___traceBuf), " defer %s(ns)", mName.string());
+    LAYER_ATRACE_BUFFER("defer %s(ns): expexted:%" PRId64 "  timestamp:%" PRId64,
+            mName.string(), expectedPresent, timestamp);
+#endif
 
     bool isDue = timestamp < expectedPresent;
     return isDue || !isPlausible;
@@ -1871,6 +2059,22 @@ Region Layer::latchBuffer(bool& recomputeVisibleRegions)
                 if (buf == NULL) {
                     return false;
                 }
+#ifdef MTK_AOSP_ENHANCEMENT
+                ANativeWindowBuffer* nativeBuffer = buf->getNativeBuffer();
+                buffer_handle_t handle = nativeBuffer->handle;
+
+                gralloc_extra_ion_sf_info_t extInfo;
+                gralloc_extra_query(handle, GRALLOC_EXTRA_GET_IOCTL_ION_SF_INFO, &extInfo);
+
+                bool isVideo = ((extInfo.status & GRALLOC_EXTRA_MASK_TYPE) == GRALLOC_EXTRA_BIT_TYPE_VIDEO);
+                bool isDirty = ((extInfo.status & GRALLOC_EXTRA_MASK_DIRTY) == GRALLOC_EXTRA_BIT_DIRTY);
+
+                if (isVideo && !isDirty) {
+                    ALOGE("[REJECT] is reject handle=%p video(%d) dirty(%d)",
+                        handle, isVideo, isDirty);
+                    return true;
+                }
+#endif
 
                 uint32_t bufWidth  = buf->getWidth();
                 uint32_t bufHeight = buf->getHeight();
@@ -2235,6 +2439,13 @@ void Layer::dump(String8& result, Colorizer& colorizer) const
             " queued-frames=%d, mRefreshPending=%d\n",
             mFormat, w0, h0, s0,f0,
             mQueuedFrames, mRefreshPending);
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    result.appendFormat(
+            "      "
+            "mSecure=%d, mProtectedByApp=%d, mFiltering=%d, mNeedsFiltering=%d\n",
+            isSecure(), mProtectedByApp, mFiltering, mNeedsFiltering);
+#endif
 
     if (mSurfaceFlingerConsumer != 0) {
         mSurfaceFlingerConsumer->dump(result, "            ");

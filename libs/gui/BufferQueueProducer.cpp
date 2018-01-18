@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +44,12 @@
 
 #include <utils/Log.h>
 #include <utils/Trace.h>
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <gui/ISurfaceComposer.h>
+#include <private/gui/ComposerService.h>
+#include <gui/mediatek/FreeMode.h>
+#endif
 
 namespace android {
 
@@ -89,8 +100,13 @@ status_t BufferQueueProducer::requestBuffer(int slot, sp<GraphicBuffer>* buf) {
 status_t BufferQueueProducer::setMaxDequeuedBufferCount(
         int maxDequeuedBuffers) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    BQ_LOGI("setMaxDequeuedBufferCount: maxDequeuedBuffers = %d",
+            maxDequeuedBuffers);
+#else
     BQ_LOGV("setMaxDequeuedBufferCount: maxDequeuedBuffers = %d",
             maxDequeuedBuffers);
+#endif
 
     sp<IConsumerListener> listener;
     { // Autolock scope
@@ -360,6 +376,13 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
         }
     } // Autolock scope
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // give a warning if dequeueBuffer() in a disconnected state
+    if (BufferQueueCore::NO_CONNECTED_API == mCore->mConnectedApi) {
+        BQ_LOGW("dequeueBuffer() in a disconnected state");
+    }
+#endif
+
     BQ_LOGV("dequeueBuffer: w=%u h=%u format=%#x, usage=%#x", width, height,
             format, usage);
 
@@ -372,6 +395,12 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
     EGLDisplay eglDisplay = EGL_NO_DISPLAY;
     EGLSyncKHR eglFence = EGL_NO_SYNC_KHR;
     bool attachedByConsumer = false;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (mCore->mIsFreeMode) {
+        while(!mCore->mQueue.empty()) { }
+    }
+#endif
 
     { // Autolock scope
         Mutex::Autolock lock(mCore->mMutex);
@@ -391,6 +420,16 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
         }
 
         int found = BufferItem::INVALID_BUFFER_SLOT;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (mCore->mIsFreeMode) {
+            if (FreeModeDevice::getInstance().freeMode(&found, &mSlots)) {
+                *outSlot = found;
+                return returnFlags;
+            }
+        }
+#endif
+
         while (found == BufferItem::INVALID_BUFFER_SLOT) {
             status_t status = waitForFreeSlotThenRelock(FreeSlotCaller::Dequeue,
                     &found);
@@ -448,6 +487,9 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
         if ((buffer == NULL) ||
                 buffer->needsReallocation(width, height, format, usage))
         {
+#ifdef MTK_AOSP_ENHANCEMENT
+            BQ_LOGI("new GraphicBuffer needed");
+#endif
             mSlots[found].mAcquireCalled = false;
             mSlots[found].mGraphicBuffer = NULL;
             mSlots[found].mRequestBufferCalled = false;
@@ -516,6 +558,17 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
                 BQ_LOGE("dequeueBuffer: createGraphicBuffer failed");
                 return error;
             }
+#ifdef MTK_AOSP_ENHANCEMENT
+            else {
+                mCore->debugger.setIonInfo(graphicBuffer);
+                if (CC_UNLIKELY((width != uint32_t(graphicBuffer->width)) ||
+                            (height != uint32_t(graphicBuffer->height)) ||
+                            (format != graphicBuffer->format) ||
+                            (usage != uint32_t(graphicBuffer->usage)))) {
+                    BQ_LOGE("*** UNEXPECTED graphic buffer allocation result ***");
+                }
+            }
+#endif
 
             if (mCore->mIsAbandoned) {
                 mCore->mFreeSlots.insert(*outSlot);
@@ -547,10 +600,19 @@ status_t BufferQueueProducer::dequeueBuffer(int *outSlot,
         eglDestroySyncKHR(eglDisplay, eglFence);
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // for dump, buffers holded by BufferQueueDump should be updated
+    mCore->debugger.onDequeue(
+            *outSlot, mSlots[*outSlot].mGraphicBuffer, *outFence);
+
+    // mark android original unsafe log here
+    // no lock protection, and not important info
+#else
     BQ_LOGV("dequeueBuffer: returning slot=%d/%" PRIu64 " buf=%p flags=%#x",
             *outSlot,
             mSlots[*outSlot].mFrameNumber,
             mSlots[*outSlot].mGraphicBuffer->handle, returnFlags);
+#endif
 
     return returnFlags;
 }
@@ -732,6 +794,20 @@ status_t BufferQueueProducer::queueBuffer(int slot,
     ATRACE_CALL();
     ATRACE_BUFFER_INDEX(slot);
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (mCore->mIsFreeMode) {
+            output->inflate(mCore->mDefaultWidth, mCore->mDefaultHeight,
+            mCore->mTransformHint,
+            static_cast<uint32_t>(mCore->mQueue.size()),
+            mCore->mFrameCounter + 1);
+        return NO_ERROR;
+    }
+    // give a warning if queueBuffer() in a disconnected state
+    if (BufferQueueCore::NO_CONNECTED_API == mCore->mConnectedApi) {
+        BQ_LOGW("queueBuffer() in a disconnected state");
+    }
+#endif
+
     int64_t timestamp;
     bool isAutoTimestamp;
     android_dataspace dataSpace;
@@ -815,6 +891,17 @@ status_t BufferQueueProducer::queueBuffer(int slot,
             return BAD_VALUE;
         }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+        if (mCore->mQueue.size() > 1) {
+            // means consumer is slower than producer
+            BQ_LOGI("RunningBehind, queued size:%zd", mCore->mQueue.size());
+
+            char ___traceBuf[256];
+            snprintf(___traceBuf, sizeof(___traceBuf), "RunningBehind(q:%zd)", mCore->mQueue.size());
+            android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);
+        }
+#endif
+
         // Override UNKNOWN dataspace with consumer default
         if (dataSpace == HAL_DATASPACE_UNKNOWN) {
             dataSpace = mCore->mDefaultBufferDataSpace;
@@ -885,8 +972,26 @@ status_t BufferQueueProducer::queueBuffer(int slot,
                         mCore->mActiveBuffers.erase(last.mSlot);
                         mCore->mFreeBuffers.push_back(last.mSlot);
                     }
-                }
+#ifdef MTK_AOSP_ENHANCEMENT
+                    BQ_LOGI("queueBuffer: slot %d is dropped, handle=%p",
+                            last.mSlot, mSlots[last.mSlot].mGraphicBuffer->handle);
 
+                    char ___traceBuf[256];
+                    snprintf(___traceBuf, sizeof(___traceBuf), "dropped:%d (h:%p)",
+                            last.mSlot, mSlots[last.mSlot].mGraphicBuffer->handle);
+                    android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);
+#endif
+                }
+#ifdef MTK_AOSP_ENHANCEMENT
+                else {
+                    BQ_LOGI("queueBuffer: slot %d is dropped", last.mSlot);
+
+                    char ___traceBuf[256];
+                    snprintf(___traceBuf, sizeof(___traceBuf), "dropped:%d", last.mSlot);
+                    android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);
+
+                }
+#endif
                 // Overwrite the droppable buffer with the incoming one
                 mCore->mQueue.editItemAt(mCore->mQueue.size() - 1) = item;
                 frameReplacedListener = mCore->mConsumerListener;
@@ -905,7 +1010,11 @@ status_t BufferQueueProducer::queueBuffer(int slot,
                 static_cast<uint32_t>(mCore->mQueue.size()),
                 mCore->mFrameCounter + 1);
 
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_INT_PERF(mCore->mConsumerName.string(), mCore->mQueue.size());
+#else
         ATRACE_INT(mCore->mConsumerName.string(), mCore->mQueue.size());
+#endif
         mCore->mOccupancyTracker.registerOccupancyChange(mCore->mQueue.size());
 
         // Take a ticket for the callback functions
@@ -956,12 +1065,19 @@ status_t BufferQueueProducer::queueBuffer(int slot,
         lastQueuedFence->waitForever("Throttling EGL Production");
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    mCore->debugger.onQueue(slot, timestamp);
+#endif
     return NO_ERROR;
 }
 
 status_t BufferQueueProducer::cancelBuffer(int slot, const sp<Fence>& fence) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    BQ_LOGD("cancelBuffer: slot %d", slot);
+#else
     BQ_LOGV("cancelBuffer: slot %d", slot);
+#endif
     Mutex::Autolock lock(mCore->mMutex);
 
     if (mCore->mIsAbandoned) {
@@ -1009,6 +1125,9 @@ status_t BufferQueueProducer::cancelBuffer(int slot, const sp<Fence>& fence) {
     mSlots[slot].mFence = fence;
     mCore->mDequeueCondition.broadcast();
     VALIDATE_CONSISTENCY();
+#ifdef MTK_AOSP_ENHANCEMENT
+    mCore->debugger.onCancel(slot);
+#endif
 
     return NO_ERROR;
 }
@@ -1060,6 +1179,42 @@ int BufferQueueProducer::query(int what, int *outValue) {
                 value = static_cast<int32_t>(mCore->mBufferAge);
             }
             break;
+#ifdef MTK_AOSP_ENHANCEMENT
+        case NATIVE_WINDOW_CONSUMER_PID:
+            value = mCore->debugger.mConsumerPid;
+            break;
+        case NATIVE_WINDOW_FREEMODE_QUERY:
+            value = mCore->mIsFreeMode;
+            break;
+        case NATIVE_WINDOW_FREEMODE_ENABLE: {
+            sp<ISurfaceComposer> composer(ComposerService::getComposerService());
+            if (composer->authenticateSurfaceTexture(this)) {
+                if (!mCore->mIsFreeMode) {
+                    bool ocuppied = false;
+                    //FreeModeDevice::getInstance().query(&ocuppied);
+                    if (mCore->mBufferHasBeenQueued && !ocuppied) {
+                        mCore->mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(true);
+                    } else {
+                        BQ_LOGW("setFreeMode: buffer acquired(%d) FreeMode ocuppied:%d",
+                                mCore->mBufferHasBeenQueued, ocuppied);
+                    }
+                } else {
+                    mCore->mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(true);
+                    BQ_LOGW("setFreeMode: already set FreeMode %d, properly change config", mCore->mIsFreeMode);
+                }
+            } else {
+                BQ_LOGW("setFreeMode: consumer is not a composer");
+            }
+            value = mCore->mIsFreeMode;
+            break;
+        }
+        case NATIVE_WINDOW_FREEMODE_DISABLE:
+            if (mCore->mIsFreeMode) {
+                mCore->mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(false);
+            }
+            value = mCore->mIsFreeMode;
+            break;
+#endif
         default:
             return BAD_VALUE;
     }
@@ -1074,8 +1229,13 @@ status_t BufferQueueProducer::connect(const sp<IProducerListener>& listener,
     ATRACE_CALL();
     Mutex::Autolock lock(mCore->mMutex);
     mConsumerName = mCore->mConsumerName;
+#ifdef MTK_AOSP_ENHANCEMENT
+    mCore->debugger.onProducerConnect(
+            listener->asBinder(listener), api, producerControlledByApp);
+#else
     BQ_LOGV("connect: api=%d producerControlledByApp=%s", api,
             producerControlledByApp ? "true" : "false");
+#endif
 
     if (mCore->mIsAbandoned) {
         BQ_LOGE("connect: BufferQueue has been abandoned");
@@ -1154,7 +1314,16 @@ status_t BufferQueueProducer::connect(const sp<IProducerListener>& listener,
 
 status_t BufferQueueProducer::disconnect(int api, DisconnectMode mode) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    // to reset pid of producer
+    mCore->debugger.onProducerDisconnect();
+    BQ_LOGI("disconnect(P): api %d", api);
+    if (mCore->mIsFreeMode) {
+        mCore->mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(false);
+    }
+#else
     BQ_LOGV("disconnect: api %d", api);
+#endif
 
     int status = NO_ERROR;
     sp<IConsumerListener> listener;
@@ -1291,6 +1460,11 @@ void BufferQueueProducer::allocateBuffers(uint32_t width, uint32_t height,
                 mCore->mIsAllocatingCondition.broadcast();
                 return;
             }
+#ifdef MTK_AOSP_ENHANCEMENT
+            else {
+                mCore->debugger.setIonInfo(graphicBuffer);
+            }
+#endif
             buffers.push_back(graphicBuffer);
         }
 

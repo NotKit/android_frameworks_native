@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,12 +19,26 @@
  * limitations under the License.
  */
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#define ATRACE_TAG ATRACE_TAG_GRAPHICS
+#endif
 // #define LOG_NDEBUG 0
 #include "VirtualDisplaySurface.h"
 #include "HWComposer.h"
 
 #include <gui/BufferItem.h>
 #include <gui/IProducerListener.h>
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <utils/Trace.h>
+
+#define ATRACE_BUFFER_INDEX(name, index)                                        \
+    if (ATRACE_ENABLED()) {                                                     \
+        char ___traceBuf[256];                                                  \
+        snprintf(___traceBuf, sizeof(___traceBuf), "%s: %d", (name), (index));  \
+        android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);             \
+    }
+#endif
 
 // ---------------------------------------------------------------------------
 namespace android {
@@ -120,6 +139,10 @@ status_t VirtualDisplaySurface::beginFrame(bool mustRecompose) {
 
     mMustRecompose = mustRecompose;
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
+
     VDS_LOGW_IF(mDbgState != DBG_STATE_IDLE,
             "Unexpected beginFrame() in %s state", dbgStateStr());
     mDbgState = DBG_STATE_BEGUN;
@@ -130,6 +153,10 @@ status_t VirtualDisplaySurface::beginFrame(bool mustRecompose) {
 status_t VirtualDisplaySurface::prepareFrame(CompositionType compositionType) {
     if (mDisplayId < 0)
         return NO_ERROR;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
 
     VDS_LOGW_IF(mDbgState != DBG_STATE_BEGUN,
             "Unexpected prepareFrame() in %s state", dbgStateStr());
@@ -185,6 +212,10 @@ status_t VirtualDisplaySurface::advanceFrame() {
     if (mDisplayId < 0)
         return NO_ERROR;
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
+
     if (mCompositionType == COMPOSITION_HWC) {
         VDS_LOGW_IF(mDbgState != DBG_STATE_PREPARED,
                 "Unexpected advanceFrame() in %s state on HWC frame",
@@ -236,6 +267,10 @@ void VirtualDisplaySurface::onFrameCommitted() {
     if (mDisplayId < 0)
         return;
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
+
     VDS_LOGW_IF(mDbgState != DBG_STATE_HWC,
             "Unexpected onFrameCommitted() in %s state", dbgStateStr());
     mDbgState = DBG_STATE_IDLE;
@@ -282,6 +317,9 @@ void VirtualDisplaySurface::onFrameCommitted() {
                     &qbo);
             if (result == NO_ERROR) {
                 updateQueueBufferOutput(qbo);
+#ifdef MTK_AOSP_ENHANCEMENT
+                ATRACE_BUFFER_INDEX("queueBuffer", sslot);
+#endif
             }
         } else {
             // If the surface hadn't actually been updated, then we only went
@@ -292,6 +330,9 @@ void VirtualDisplaySurface::onFrameCommitted() {
             mSource[SOURCE_SINK]->cancelBuffer(sslot, retireFence);
 #else
             mSource[SOURCE_SINK]->cancelBuffer(sslot, outFence);
+#endif
+#ifdef MTK_AOSP_ENHANCEMENT
+            ATRACE_BUFFER_INDEX("cancelBuffer", sslot);
 #endif
         }
     }
@@ -320,6 +361,9 @@ const sp<Fence>& VirtualDisplaySurface::getClientTargetAcquireFence() const {
 
 status_t VirtualDisplaySurface::requestBuffer(int pslot,
         sp<GraphicBuffer>* outBuf) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_BUFFER_INDEX("requestBuffer", pslot);
+#endif
     if (mDisplayId < 0)
         return mSource[SOURCE_SINK]->requestBuffer(pslot, outBuf);
 
@@ -351,6 +395,9 @@ status_t VirtualDisplaySurface::dequeueBuffer(Source source,
     int pslot = mapSource2ProducerSlot(source, *sslot);
     VDS_LOGV("dequeueBuffer(%s): sslot=%d pslot=%d result=%d",
             dbgSourceStr(source), *sslot, pslot, result);
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_BUFFER_INDEX("dequeueBuffer", *sslot);
+#endif
     uint64_t sourceBit = static_cast<uint64_t>(source) << pslot;
 
     if ((mProducerSlotSource & (1ULL << pslot)) != sourceBit) {
@@ -385,8 +432,16 @@ status_t VirtualDisplaySurface::dequeueBuffer(Source source,
 
 status_t VirtualDisplaySurface::dequeueBuffer(int* pslot, sp<Fence>* fence,
         uint32_t w, uint32_t h, PixelFormat format, uint32_t usage) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (mDisplayId < 0) {
+        status_t result = mSource[SOURCE_SINK]->dequeueBuffer(pslot, fence, w, h, format, usage);
+        ATRACE_BUFFER_INDEX("dequeueBuffer", *pslot);
+        return result;
+    }
+#else
     if (mDisplayId < 0)
         return mSource[SOURCE_SINK]->dequeueBuffer(pslot, fence, w, h, format, usage);
+#endif
 
     VDS_LOGW_IF(mDbgState != DBG_STATE_PREPARED,
             "Unexpected dequeueBuffer() in %s state", dbgStateStr());
@@ -553,6 +608,9 @@ int VirtualDisplaySurface::query(int what, int* value) {
 status_t VirtualDisplaySurface::connect(const sp<IProducerListener>& listener,
         int api, bool producerControlledByApp,
         QueueBufferOutput* output) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
     QueueBufferOutput qbo;
     status_t result = mSource[SOURCE_SINK]->connect(listener, api,
             producerControlledByApp, &qbo);
@@ -564,6 +622,10 @@ status_t VirtualDisplaySurface::connect(const sp<IProducerListener>& listener,
 }
 
 status_t VirtualDisplaySurface::disconnect(int api, DisconnectMode mode) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
+
     return mSource[SOURCE_SINK]->disconnect(api, mode);
 }
 
@@ -633,10 +695,16 @@ void VirtualDisplaySurface::resetPerFrameState() {
 }
 
 status_t VirtualDisplaySurface::refreshOutputBuffer() {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
     if (mOutputProducerSlot >= 0) {
         mSource[SOURCE_SINK]->cancelBuffer(
                 mapProducer2SourceSlot(SOURCE_SINK, mOutputProducerSlot),
                 mOutputFence);
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_BUFFER_INDEX("cancelBuffer", mOutputProducerSlot);
+#endif
     }
 
     int sslot;
@@ -644,6 +712,9 @@ status_t VirtualDisplaySurface::refreshOutputBuffer() {
             &sslot, &mOutputFence);
     if (result < 0)
         return result;
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_BUFFER_INDEX("dequeueBuffer", sslot);
+#endif
     mOutputProducerSlot = mapSource2ProducerSlot(SOURCE_SINK, sslot);
 
     // On GLES-only frames, we don't have the right output buffer acquire fence

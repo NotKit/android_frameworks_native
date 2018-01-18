@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -179,6 +184,9 @@ public:
 
     /* Returns a new object that has a duplicate of this channel's fd. */
     sp<InputChannel> dup() const;
+
+    /// M: Switch log by command
+    static void switchInputLog(bool enable);
 
 private:
     String8 mName;

@@ -1081,7 +1081,6 @@ status_t Parcel::writeString16(const String16& str)
 status_t Parcel::writeString16(const char16_t* str, size_t len)
 {
     if (str == NULL) return writeInt32(-1);
-
     status_t err = writeInt32(len);
     if (err == NO_ERROR) {
         len *= sizeof(char16_t);
@@ -1178,10 +1177,12 @@ status_t Parcel::writeDupFileDescriptor(int fd)
 {
     int dupFd = dup(fd);
     if (dupFd < 0) {
+        ALOGE("writeDupFileDescriptor: error %d dup fd %d\n", errno, fd);
         return -errno;
     }
     status_t err = writeFileDescriptor(dupFd, true /*takeOwnership*/);
     if (err != OK) {
+        ALOGE("writeDupFileDescriptor: error %d write fd %d\n", err, dupFd);
         close(dupFd);
     }
     return err;
@@ -2042,7 +2043,11 @@ status_t Parcel::readBlob(size_t len, ReadableBlob* outBlob) const
 
     void* ptr = ::mmap(NULL, len, isMutable ? PROT_READ | PROT_WRITE : PROT_READ,
             MAP_SHARED, fd, 0);
-    if (ptr == MAP_FAILED) return NO_MEMORY;
+    if (ptr == MAP_FAILED)
+    {
+        ALOGE("readBlob: read from ashmem but fail to mmap fd %d errno %d\n", fd, errno);
+        return NO_MEMORY;
+    }
 
     outBlob->init(fd, ptr, len, isMutable);
     return NO_ERROR;
@@ -2303,8 +2308,12 @@ void Parcel::freeDataNoInit()
             }
             pthread_mutex_unlock(&gParcelGlobalAllocSizeLock);
             free(mData);
+            mData = 0;
         }
-        if (mObjects) free(mObjects);
+        if (mObjects) {
+            free(mObjects);
+            mObjects = NULL;
+        }
     }
 }
 

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,6 +72,9 @@ public:
     virtual status_t reboot(bool confirm, const String16& reason, bool wait) = 0;
     virtual status_t shutdown(bool confirm, const String16& reason, bool wait) = 0;
     virtual status_t crash(const String16& message) = 0;
+
+    virtual status_t startBacklight(int) = 0;
+    virtual status_t stopBacklight(void) = 0;
 };
 
 // ----------------------------------------------------------------------------

@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +36,12 @@
 
 #include "EventThread.h"
 #include "SurfaceFlinger.h"
+
+#ifdef MTK_AOSP_ENHANCEMENT
+// reserve client pid infomation
+#include <binder/IPCThreadState.h>
+#include <cutils/log.h>
+#endif
 
 // ---------------------------------------------------------------------------
 namespace android {
@@ -387,11 +398,20 @@ EventThread::Connection::Connection(
         const sp<EventThread>& eventThread)
     : count(-1), mEventThread(eventThread), mChannel(new BitTube())
 {
+#ifdef MTK_AOSP_ENHANCEMENT
+    // reserve client pid infomation
+    mPid = IPCThreadState::self()->getCallingPid();
+    ALOGI("EventThread Client Pid (%d) created", mPid);
+#endif
 }
 
 EventThread::Connection::~Connection() {
     // do nothing here -- clean-up will happen automatically
     // when the main thread wakes up
+#ifdef MTK_AOSP_ENHANCEMENT
+    // reserve client pid infomation
+    ALOGI("EventThread Client Pid (%d) disconnected by (%d)", mPid, getpid());
+#endif
 }
 
 void EventThread::Connection::onFirstRef() {
@@ -404,15 +424,33 @@ sp<BitTube> EventThread::Connection::getDataChannel() const {
 }
 
 void EventThread::Connection::setVsyncRate(uint32_t count) {
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef MTK_USER_BUILD
+    ALOGD("setVsyncRate(%d, c=%d)", mPid, count);
+#endif
+#endif
     mEventThread->setVsyncRate(count, this);
 }
 
 void EventThread::Connection::requestNextVsync() {
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef MTK_USER_BUILD
+    ALOGV("requestNextVsync(%d)", mPid);
+#endif
+#endif
     mEventThread->requestNextVsync(this);
 }
 
 status_t EventThread::Connection::postEvent(
         const DisplayEventReceiver::Event& event) {
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifndef MTK_USER_BUILD
+    if (event.header.type == DisplayEventReceiver::DISPLAY_EVENT_VSYNC)
+        ALOGV("postEvent(%d, v/c=%d)", mPid, event.vsync.count);
+    else
+        ALOGV("postEvent(%d)", mPid);
+#endif
+#endif
     ssize_t size = DisplayEventReceiver::sendEvents(mChannel, &event, 1);
     return size < 0 ? status_t(size) : status_t(NO_ERROR);
 }

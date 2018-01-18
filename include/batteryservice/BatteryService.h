@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +36,7 @@ enum {
     BATTERY_STATUS_DISCHARGING = 3, // equals BatteryManager.BATTERY_STATUS_DISCHARGING constant
     BATTERY_STATUS_NOT_CHARGING = 4, // equals BatteryManager.BATTERY_STATUS_NOT_CHARGING constant
     BATTERY_STATUS_FULL = 5, // equals BatteryManager.BATTERY_STATUS_FULL constant
+    BATTERY_STATUS_CMD_DISCHARGING = 6, // equals BatteryManager.BATTERY_STATUS_CMD_DISCHARGING constant
 };
 
 // must be kept in sync with definitions in BatteryManager.java
@@ -68,7 +74,12 @@ struct BatteryProperties {
     int batteryCurrent;
     int batteryCycleCount;
     int batteryFullCharge;
+    int batteryStatus_smb;
+    bool batteryPresent_smb;
+    int batteryLevel_smb;
+    int batteryCurrentNow;
     int batteryChargeCounter;
+    int adjustPower;
     String8 batteryTechnology;
 
     status_t writeToParcel(Parcel* parcel) const;

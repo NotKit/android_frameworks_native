@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,10 @@
  * limitations under the License.
  */
 
+// #define LOG_NDEBUG 0
+
+#undef LOG_TAG
+#define LOG_TAG "HWComposer"
 #define ATRACE_TAG ATRACE_TAG_GRAPHICS
 
 #include <inttypes.h>
@@ -48,6 +57,10 @@
 
 #include "../Layer.h"           // needed only for debugging
 #include "../SurfaceFlinger.h"
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#include "mediatek/MtkHwc.h"
+#endif
 
 namespace android {
 
@@ -192,6 +205,9 @@ HWComposer::HWComposer(
         // we don't have VSYNC support, we need to fake it
         mVSyncThread = new VSyncThread(*this);
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    MtkHwc::getInstance().setFlinger(flinger);
+#endif
 }
 
 HWComposer::~HWComposer() {
@@ -236,6 +252,9 @@ void HWComposer::loadHwcModule()
         mHwc = NULL;
         return;
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    MtkHwc::getInstance().setHwc(mHwc);
+#endif
 }
 
 // Load and prepare the FB HAL, which uses the gralloc module.  Sets mFbDev.
@@ -300,7 +319,11 @@ void HWComposer::vsync(int disp, int64_t timestamp) {
 
         char tag[16];
         snprintf(tag, sizeof(tag), "HW_VSYNC_%1u", disp);
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_INT_PERF(tag, ++mVSyncCounts[disp] & 1);
+#else
         ATRACE_INT(tag, ++mVSyncCounts[disp] & 1);
+#endif
 
         mEventHandler.onVSyncReceived(disp, timestamp);
     }
@@ -661,6 +684,9 @@ status_t HWComposer::setFramebufferTarget(int32_t id,
 }
 
 status_t HWComposer::prepare() {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL();
+#endif
     Mutex::Autolock _l(mDisplayLock);
     for (size_t i=0 ; i<mNumDisplays ; i++) {
         DisplayData& disp(mDisplayData[i]);
@@ -692,8 +718,16 @@ status_t HWComposer::prepare() {
         }
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    MtkHwc::getInstance().onPrepareHead(mNumDisplays, mLists);
+#endif
+
     int err = mHwc->prepare(mHwc, mNumDisplays, mLists);
     ALOGE_IF(err, "HWComposer: prepare failed (%s)", strerror(-err));
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    MtkHwc::getInstance().onPrepareTail(mNumDisplays, mLists);
+#endif
 
     if (err == NO_ERROR) {
         // here we're just making sure that "skip" layers are set
@@ -767,6 +801,9 @@ sp<Fence> HWComposer::getAndResetReleaseFence(int32_t id) {
 }
 
 status_t HWComposer::commit() {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL_PERF();
+#endif
     int err = NO_ERROR;
     if (mHwc) {
         if (!hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1)) {
@@ -798,6 +835,10 @@ status_t HWComposer::commit() {
                     disp.list->retireFenceFd = -1;
                 }
                 disp.list->flags &= ~HWC_GEOMETRY_CHANGED;
+#ifdef MTK_AOSP_ENHANCEMENT
+                // clear additional flags
+                disp.list->flags &= ~HWC_ORIENTATION_MASK;
+#endif
             }
         }
     }
@@ -869,6 +910,9 @@ int HWComposer::fbPost(int32_t id,
     if (mHwc && hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1)) {
         return setFramebufferTarget(id, acquireFence, buffer);
     } else {
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_CALL();
+#endif
         acquireFence->waitForever("HWComposer::fbPost");
         return mFbDev->post(mFbDev, buffer->handle);
     }

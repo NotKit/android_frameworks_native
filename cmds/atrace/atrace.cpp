@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -97,6 +102,8 @@ static const TracingCategory k_categories[] = {
     { "res",        "Resource Loading", ATRACE_TAG_RESOURCES, { } },
     { "dalvik",     "Dalvik VM",        ATRACE_TAG_DALVIK, { } },
     { "rs",         "RenderScript",     ATRACE_TAG_RS, { } },
+    { "hwui",       "HWUI",             ATRACE_TAG_HWUI, { } },
+    { "perf",       "Performance",      ATRACE_TAG_PERF, { } },
     { "bionic",     "Bionic C Library", ATRACE_TAG_BIONIC, { } },
     { "power",      "Power Management", ATRACE_TAG_POWER, { } },
     { "pm",         "Package Manager",  ATRACE_TAG_PACKAGE_MANAGER, { } },
@@ -722,12 +729,19 @@ static bool setUpTrace()
 
     // Set up the tracing options.
     ok &= setCategoriesEnableFromFile(g_categoriesFile);
+    ALOGI("setCategoriesEnableFromFile ok: %d", ok);
     ok &= setTraceOverwriteEnable(g_traceOverwrite);
+    ALOGI("setTraceOverwriteEnable ok: %d", ok);
     ok &= setTraceBufferSizeKB(g_traceBufferSizeKB);
+    ALOGI("setTraceBufferSizeKB ok: %d", ok);
     ok &= setGlobalClockEnable(true);
-    ok &= setPrintTgidEnableIfPresent(true);
+    ALOGI("setGlobalClockEnable ok: %d", ok);
+    /*
+     * M: Disable by MTK
+     */
+    //ok &= setPrintTgidEnableIfPresent(true);
     ok &= setKernelTraceFuncs(g_kernelTraceFuncs);
-
+    ALOGI("setKernelTraceFuncs ok: %d", ok);
     // Set up the tags property.
     uint64_t tags = 0;
     for (int i = 0; i < NELEM(k_categories); i++) {
@@ -737,7 +751,7 @@ static bool setUpTrace()
         }
     }
     ok &= setTagsProperty(tags);
-
+    ALOGI("setTagsProperty ok: %d", ok);
     bool coreServicesTagEnabled = false;
     for (int i = 0; i < NELEM(k_categories); i++) {
         if (strcmp(k_categories[i].name, k_coreServiceCategory) == 0) {
@@ -755,12 +769,13 @@ static bool setUpTrace()
         packageList += value;
     }
     ok &= setAppCmdlineProperty(packageList.data());
+    ALOGI("setAppCmdlineProperty ok: %d", ok);
     ok &= pokeBinderServices();
-
+    ALOGI("pokeBinderServices ok: %d", ok);
     // Disable all the sysfs enables.  This is done as a separate loop from
     // the enables to allow the same enable to exist in multiple categories.
     ok &= disableKernelTraceEvents();
-
+    ALOGI("disableKernelTraceEvents ok: %d", ok);
     // Enable all the sysfs enables that are in an enabled category.
     for (int i = 0; i < NELEM(k_categories); i++) {
         if (g_categoryEnables[i]) {
@@ -771,8 +786,10 @@ static bool setUpTrace()
                 if (path != NULL) {
                     if (fileIsWritable(path)) {
                         ok &= setKernelOptionEnable(path, true);
+                        ALOGI("setKernelOptionEnable loop: %d, ok: %d",i, ok);
                     } else if (required) {
                         fprintf(stderr, "error writing file %s\n", path);
+                        ALOGI("error writing file %s\n", path);
                         ok = false;
                     }
                 }
@@ -1020,6 +1037,7 @@ int main(int argc, char **argv)
             {"async_dump",      no_argument, 0,  0 },
             {"list_categories", no_argument, 0,  0 },
             {"stream",          no_argument, 0,  0 },
+            {"poke_services",   no_argument, 0,  0 },
             {           0,                0, 0,  0 }
         };
 
@@ -1096,6 +1114,9 @@ int main(int argc, char **argv)
                 } else if (!strcmp(long_options[option_index].name, "list_categories")) {
                     listSupportedCategories();
                     exit(0);
+                } else if (!strcmp(long_options[option_index].name, "poke_services")) {
+                    pokeBinderServices();
+                    exit(0);
                 }
             break;
 
@@ -1108,18 +1129,23 @@ int main(int argc, char **argv)
     }
 
     registerSigHandler();
+    ALOGI("registerSigHandler");
 
     if (g_initialSleepSecs > 0) {
         sleep(g_initialSleepSecs);
+        ALOGI("sleep");
     }
 
     bool ok = true;
     ok &= setUpTrace();
+    ALOGI("setUpTrace ok: %d", ok);
     ok &= startTrace();
+    ALOGI("startTrace ok: %d", ok);
 
     if (ok && traceStart) {
         if (!traceStream) {
             printf("capturing trace...");
+            ALOGI("capturing trace...");
             fflush(stdout);
         }
 
@@ -1155,6 +1181,7 @@ int main(int argc, char **argv)
     if (ok && traceDump) {
         if (!g_traceAborted) {
             printf(" done\n");
+            ALOGI("done");
             fflush(stdout);
             int outFd = STDOUT_FILENO;
             if (g_outputFile) {
@@ -1162,8 +1189,10 @@ int main(int argc, char **argv)
             }
             if (outFd == -1) {
                 printf("Failed to open '%s', err=%d", g_outputFile, errno);
+                ALOGI("Failed to open '%s', err=%d", g_outputFile, errno);
             } else {
                 dprintf(outFd, "TRACE:\n");
+                ALOGI("TRACE:");
                 dumpTrace(outFd);
                 if (g_outputFile) {
                     close(outFd);

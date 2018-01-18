@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* ------------------------------------------------------------------
  * Copyright (C) 1998-2009 PacketVideo
  *
@@ -261,6 +266,12 @@ typedef enum OMX_INDEXTYPE {
        to 0x7FFFFFFE.  This range is not broken out by vendor, so
        private indexes are not guaranteed unique and therefore should
        only be sent to the appropriate component. */
+
+
+    //MTK DEINTERLACE SUPPORT [
+    OMX_IndexVendMtkOmxUpdateColorFormat = 0x7F200103,
+    OMX_IndexVendorMtkOmxVdecGetColorFormat = 0x7F200104, //for De-Interlacing (set color format run-time)
+    // ]
 
     OMX_IndexMax = 0x7FFFFFFF
 

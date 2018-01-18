@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +28,10 @@
 #include <utils/Timers.h>
 #include <utils/RefBase.h>
 
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+#include "EventThread.h"
+#endif
+
 namespace android {
 
 // Ignore present (retire) fences if the device doesn't have support for the
@@ -37,6 +46,9 @@ static const bool kIgnorePresentFences = false;
 class String8;
 class Fence;
 class DispSyncThread;
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+class Resync;
+#endif
 
 // DispSync maintains a model of the periodic hardware-based vsync events of a
 // display and uses that model to execute period callbacks at specific phase
@@ -182,6 +194,15 @@ private:
 
     // mMutex is used to protect access to all member variables.
     mutable Mutex mMutex;
+
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+public:
+    void setResync(sp<Resync> resync);
+    status_t registerEventListener(nsecs_t offset, VSyncSource* vss, DispSync::Callback* cb, bool delay);
+    status_t adjustVsyncPeriod(int32_t fps);
+    status_t adjustVsyncOffset(nsecs_t offset);
+    nsecs_t getVsyncOffset() const;
+#endif
 };
 
 }

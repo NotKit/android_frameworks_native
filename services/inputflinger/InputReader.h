@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -144,6 +149,9 @@ struct InputReaderConfiguration {
         // The presence of an external stylus has changed.
         CHANGE_EXTERNAL_STYLUS_PRESENCE = 1 << 7,
 
+        // The primary key mapping changed.
+        CHANGE_PRIMARY_KEY = 1 << 30,
+
         // All devices must be reopened.
         CHANGE_MUST_REOPEN = 1 << 31,
     };
@@ -230,6 +238,8 @@ struct InputReaderConfiguration {
 
     // True to show the location of touches on the touch screen as spots.
     bool showTouches;
+    // True to change primary key
+    bool changePrimaryKey = false;
 
     InputReaderConfiguration() :
             virtualKeyQuietTime(0),
@@ -679,6 +689,7 @@ private:
 class CursorButtonAccumulator {
 public:
     CursorButtonAccumulator();
+    void configure(const InputReaderConfiguration * config);
     void reset(InputDevice* device);
 
     void process(const RawEvent* rawEvent);
@@ -686,6 +697,7 @@ public:
     uint32_t getButtonState() const;
 
 private:
+    bool mChangePrimaryKey;
     bool mBtnLeft;
     bool mBtnRight;
     bool mBtnMiddle;

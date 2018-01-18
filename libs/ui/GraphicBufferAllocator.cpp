@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
 **
 ** Copyright 2009, The Android Open Source Project
 **
@@ -27,6 +32,12 @@
 #include <ui/GraphicBufferAllocator.h>
 #include <ui/Gralloc1On0Adapter.h>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <binder/IPCThreadState.h>
+#include <cutils/properties.h>
+#include <utils/CallStack.h>
+#endif
+
 namespace android {
 // ---------------------------------------------------------------------------
 
@@ -36,9 +47,23 @@ Mutex GraphicBufferAllocator::sLock;
 KeyedVector<buffer_handle_t,
     GraphicBufferAllocator::alloc_rec_t> GraphicBufferAllocator::sAllocList;
 
+#ifdef MTK_AOSP_ENHANCEMENT
+GraphicBufferAllocator::GraphicBufferAllocator()
+  : mLoader(std::make_unique<Gralloc1::Loader>()),
+    mDevice(mLoader->getDevice())
+{
+    char value[PROPERTY_VALUE_MAX];
+    property_get("debug.gbuf.callstack", value, "0");
+    mIsDumpCallStack = atoi(value);
+    if (true == mIsDumpCallStack) {
+        ALOGI("!!! dump GraphicBufferAllocator callstack for pid:%d !!!", getpid());
+    }
+}
+#else
 GraphicBufferAllocator::GraphicBufferAllocator()
   : mLoader(std::make_unique<Gralloc1::Loader>()),
     mDevice(mLoader->getDevice()) {}
+#endif
 
 GraphicBufferAllocator::~GraphicBufferAllocator() {}
 
@@ -146,11 +171,26 @@ status_t GraphicBufferAllocator::allocate(uint32_t width, uint32_t height,
         list.add(*handle, rec);
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // dump call stack here after handle value got
+    if (true == mIsDumpCallStack) {
+        ALOGD("[GraphicBufferAllocator::alloc] handle:%p", *handle);
+        CallStack stack("    ");
+    }
+#endif
+
     return NO_ERROR;
 }
 
 status_t GraphicBufferAllocator::free(buffer_handle_t handle)
 {
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (true == mIsDumpCallStack) {
+        ALOGD("[GraphicBufferAllocator::free] handle:%p", handle);
+        CallStack stack("    ");
+    }
+#endif
+
     ATRACE_CALL();
 
     auto error = mDevice->release(handle);

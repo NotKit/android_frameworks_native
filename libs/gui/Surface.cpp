@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,6 +107,9 @@ void Surface::setSidebandStream(const sp<NativeHandle>& stream) {
 }
 
 void Surface::allocateBuffers() {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGD("Surface::allocateBuffers(this=%p)", this);
+#endif
     uint32_t reqWidth = mReqWidth ? mReqWidth : mUserWidth;
     uint32_t reqHeight = mReqHeight ? mReqHeight : mUserHeight;
     mGraphicBufferProducer->allocateBuffers(reqWidth, reqHeight,
@@ -332,7 +340,12 @@ int Surface::dequeueBuffer(android_native_buffer_t** buffer, int* fenceFd) {
         }
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // Google issue: binder transaction might be failed and get null fence
+    if (fence != NULL && fence->isValid()) {
+#else
     if (fence->isValid()) {
+#endif
         *fenceFd = fence->dup();
         if (*fenceFd == -1) {
             ALOGE("dequeueBuffer: error duping fence: %d", errno);
@@ -404,7 +417,11 @@ int Surface::lockBuffer_DEPRECATED(android_native_buffer_t* buffer __attribute__
 }
 
 int Surface::queueBuffer(android_native_buffer_t* buffer, int fenceFd) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL_PERF();
+#else
     ATRACE_CALL();
+#endif
     ALOGV("Surface::queueBuffer");
     Mutex::Autolock lock(mMutex);
     int64_t timestamp;
@@ -820,7 +837,11 @@ int Surface::connect(int api) {
 
 int Surface::connect(int api, const sp<IProducerListener>& listener) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGD("Surface::connect(this=%p,api=%d)", this, api);
+#else
     ALOGV("Surface::connect");
+#endif
     Mutex::Autolock lock(mMutex);
     IGraphicBufferProducer::QueueBufferOutput output;
     int err = mGraphicBufferProducer->connect(listener, api, mProducerControlledByApp, &output);
@@ -852,7 +873,11 @@ int Surface::connect(int api, const sp<IProducerListener>& listener) {
 
 int Surface::disconnect(int api, IGraphicBufferProducer::DisconnectMode mode) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGD("Surface::disconnect(this=%p,api=%d)", this, api);
+#else
     ALOGV("Surface::disconnect");
+#endif
     Mutex::Autolock lock(mMutex);
     mSharedBufferSlot = BufferItem::INVALID_BUFFER_SLOT;
     mSharedBufferHasBeenQueued = false;
@@ -967,7 +992,11 @@ int Surface::setCrop(Rect const* rect)
 int Surface::setBufferCount(int bufferCount)
 {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGD("Surface::setBufferCount(this=%p,bufferCount=%d)", this, bufferCount);
+#else
     ALOGV("Surface::setBufferCount");
+#endif
     Mutex::Autolock lock(mMutex);
 
     status_t err = NO_ERROR;
@@ -1047,7 +1076,11 @@ int Surface::setAutoRefresh(bool autoRefresh) {
 int Surface::setBuffersDimensions(uint32_t width, uint32_t height)
 {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGV("Surface::setBuffersDimensions(this=%p,w=%d,h=%d)", this, width, height);
+#else
     ALOGV("Surface::setBuffersDimensions");
+#endif
 
     if ((width && !height) || (!width && height))
         return BAD_VALUE;
@@ -1064,7 +1097,11 @@ int Surface::setBuffersDimensions(uint32_t width, uint32_t height)
 int Surface::setBuffersUserDimensions(uint32_t width, uint32_t height)
 {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    ALOGD("Surface::setBuffersUserDimensions(this=%p,w=%d,h=%d)", this, width, height);
+#else
     ALOGV("Surface::setBuffersUserDimensions");
+#endif
 
     if ((width && !height) || (!width && height))
         return BAD_VALUE;
@@ -1276,7 +1313,16 @@ status_t Surface::lock(
             // copy the area that is invalid and not repainted this round
             const Region copyback(mDirtyRegion.subtract(newDirtyRegion));
             if (!copyback.isEmpty())
+#ifdef MTK_AOSP_ENHANCEMENT
+            {
+                sp<Fence> backBufferFence = new Fence(fenceFd);
+                fenceFd = -1;
+                backBufferFence->waitForever("wait back buffer fence for copy back");
                 copyBlt(backBuffer, frontBuffer, copyback);
+            }
+#else
+                copyBlt(backBuffer, frontBuffer, copyback);
+#endif
         } else {
             // if we can't copy-back anything, modify the user's dirty
             // region to make sure they redraw the whole buffer

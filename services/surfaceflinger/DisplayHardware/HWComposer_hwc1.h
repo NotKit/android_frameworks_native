@@ -34,6 +34,10 @@
 #include <utils/Timers.h>
 #include <utils/Vector.h>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <hwc_priv.h>
+#endif
+
 extern "C" int clock_nanosleep(clockid_t clock_id, int flags,
                            const struct timespec *request,
                            struct timespec *remain);

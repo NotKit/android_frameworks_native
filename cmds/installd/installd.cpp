@@ -316,6 +316,11 @@ static int do_rm_dex(char **arg, char reply[REPLY_MAX] ATTRIBUTE_UNUSED)
     return rm_dex(arg[0], arg[1]); /* pkgname, instruction_set */
 }
 
+/// M: Add method to delete dex of vendor/operator/app after uninstalled.
+static int do_rm_dex_cache(char **arg, char reply[REPLY_MAX] ATTRIBUTE_UNUSED) {
+    return rm_dex_cache(arg[0], arg[1]); /* pkgname, instruction_set */
+}
+
 static int do_free_cache(char **arg, char reply[REPLY_MAX] ATTRIBUTE_UNUSED) /* TODO int:free_size */
 {
     return free_cache(parse_null(arg[0]), (int64_t)atoll(arg[1])); /* uuid, free_size */
@@ -459,6 +464,7 @@ struct cmdinfo cmds[] = {
     { "merge_profiles",       2, do_merge_profiles },
     { "dump_profiles",        3, do_dump_profiles },
     { "delete_odex",          3, do_delete_odex },
+    { "rmdexcache",           2, do_rm_dex_cache },
 };
 
 static int readx(int s, void *_buf, int count)

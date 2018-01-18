@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +44,21 @@
 using std::max;
 using std::min;
 
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+#include "mediatek/Resync.h"
+#endif
+
+#ifdef MTK_AOSP_ENHANCEMENT
+#define DS_ATRACE_NAME(name) android::ScopedTrace ___tracer(ATRACE_TAG, name)
+
+#define DS_ATRACE_BUFFER(x, ...)                                                \
+    if (ATRACE_ENABLED()) {                                                     \
+        char ___traceBuf[256];                                                  \
+        snprintf(___traceBuf, sizeof(___traceBuf), x, ##__VA_ARGS__);           \
+        android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);             \
+    }
+#endif
+
 namespace android {
 
 // Setting this to true enables verbose tracing that can be used to debug
@@ -71,7 +91,11 @@ public:
             mPhase(0),
             mReferenceTime(0),
             mWakeupLatency(0),
-            mFrameNumber(0) {}
+            mFrameNumber(0) {
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+        mResync = NULL;
+#endif
+    }
 
     virtual ~DispSyncThread() {}
 
@@ -81,6 +105,9 @@ public:
         mPeriod = period;
         mPhase = phase;
         mReferenceTime = referenceTime;
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+        if (mResync != NULL) mResync->updateModelLocked(mPeriod, mPhase);
+#endif
         ALOGV("[%s] updateModel: mPeriod = %" PRId64 ", mPhase = %" PRId64
                 " mReferenceTime = %" PRId64, mName, ns2us(mPeriod),
                 ns2us(mPhase), ns2us(mReferenceTime));
@@ -99,6 +126,9 @@ public:
         nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
 
         while (true) {
+#ifdef MTK_AOSP_ENHANCEMENT
+            DS_ATRACE_NAME("send_sw_vsync");
+#endif
             Vector<CallbackInvocation> callbackInvocations;
 
             nsecs_t targetTime = 0;
@@ -131,6 +161,9 @@ public:
                 bool isWakeup = false;
 
                 if (now < targetTime) {
+#ifdef MTK_AOSP_ENHANCEMENT
+                    DS_ATRACE_BUFFER("sleep:%" PRId64, targetTime - now);
+#endif
                     if (kTraceDetailedInfo) ATRACE_NAME("DispSync waiting");
 
                     if (targetTime == INT64_MAX) {
@@ -160,17 +193,33 @@ public:
                     mWakeupLatency = ((mWakeupLatency * 63) +
                             (now - targetTime)) / 64;
                     mWakeupLatency = min(mWakeupLatency, kMaxWakeupLatency);
+#ifdef MTK_AOSP_ENHANCEMENT
+                    ATRACE_INT64("DispSync:WakeupLat", now - targetTime);
+                    if (kTraceDetailedInfo) {
+                        ATRACE_INT64("DispSync:AvgWakeupLat", mWakeupLatency);
+                    }
+#else
                     if (kTraceDetailedInfo) {
                         ATRACE_INT64("DispSync:WakeupLat", now - targetTime);
                         ATRACE_INT64("DispSync:AvgWakeupLat", mWakeupLatency);
                     }
+#endif
                 }
 
                 callbackInvocations = gatherCallbackInvocationsLocked(now);
             }
 
             if (callbackInvocations.size() > 0) {
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+                if (mResync != NULL) {
+                    Vector<DupCallbackInvocation> dupCallbackInvocations = PackageCallbackInvocation(callbackInvocations);
+                    mResync->fireCallbackInvocations(dupCallbackInvocations);
+                } else {
+                    fireCallbackInvocations(callbackInvocations);
+                }
+#else
                 fireCallbackInvocations(callbackInvocations);
+#endif
             }
         }
 
@@ -195,8 +244,20 @@ public:
 
         // We want to allow the firstmost future event to fire without
         // allowing any past events to fire
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+        if (mResync != NULL) {
+            DupEventListener dup_listener;
+            PackageEventListener(listener, &dup_listener);
+            mResync->addEventListener(&dup_listener, mWakeupLatency);
+            UnPackageEventListener(dup_listener, &listener);
+        } else {
+            listener.mLastEventTime = systemTime() - mPeriod / 2 + mPhase -
+                mWakeupLatency;
+        }
+#else
         listener.mLastEventTime = systemTime() - mPeriod / 2 + mPhase -
                 mWakeupLatency;
+#endif
 
         mEventListeners.push(listener);
 
@@ -211,6 +272,11 @@ public:
 
         for (size_t i = 0; i < mEventListeners.size(); i++) {
             if (mEventListeners[i].mCallback == callback) {
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+                DupEventListener dup_listener;
+                PackageEventListener(mEventListeners[i], &dup_listener);
+                if (mResync != NULL) mResync->removeEventListener(dup_listener);
+#endif
                 mEventListeners.removeAt(i);
                 mCond.signal();
                 return NO_ERROR;
@@ -359,6 +425,84 @@ private:
 
     Mutex mMutex;
     Condition mCond;
+
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+    sp<Resync> mResync;
+
+public:
+    void setResync(sp<Resync> resync) {
+        Mutex::Autolock lock(mMutex);
+        mResync = resync;
+    }
+
+    void updateSyncTime(int num, nsecs_t sync) {
+        Mutex::Autolock lock(mMutex);
+        if (mResync != NULL) mResync->updateSyncTimeLocked(num, sync);
+    }
+
+    status_t registerEventListener(nsecs_t offset, VSyncSource* vss, DispSync::Callback* cb, bool delay) {
+        Mutex::Autolock lock(mMutex);
+        if (mResync != NULL) return mResync->registerEventListener(offset, vss, cb, delay);
+        return NO_ERROR;
+    }
+
+    status_t adjustVsyncPeriod(int32_t fps) {
+        if (mResync != NULL) return mResync->adjustVsyncPeriod(fps);
+        return NO_ERROR;
+    }
+
+    status_t adjustVsyncOffset(nsecs_t offset) {
+        status_t res = NO_ERROR;
+        if (mResync != NULL) {
+            res = mResync->adjustVsyncOffset(offset);
+            mCond.signal();
+        }
+        return res;
+    }
+
+    void dump(String8& result) {
+        if (mResync != NULL) {
+            mResync->dump(result);
+        }
+    }
+
+    nsecs_t getVsyncOffset() const {
+        nsecs_t res = VSYNC_EVENT_PHASE_OFFSET_NS;
+        if (mResync != NULL) {
+            res = mResync->getVsyncOffset();
+        }
+        return res;
+    }
+
+private:
+
+    void PackageEventListener(const EventListener& listener, DupEventListener* dup_listener) {
+        dup_listener->mCallback = listener.mCallback;
+        dup_listener->mLastEventTime = listener.mLastEventTime;
+        dup_listener->mPhase = listener.mPhase;
+        dup_listener->mName = listener.mName;
+    }
+
+    void UnPackageEventListener(const DupEventListener& dup_listener, EventListener* listener) {
+        listener->mCallback = dup_listener.mCallback;
+        listener->mLastEventTime = dup_listener.mLastEventTime;
+        listener->mPhase = dup_listener.mPhase;
+        listener->mName = dup_listener.mName;
+    }
+
+    Vector<DupCallbackInvocation> PackageCallbackInvocation(const Vector<CallbackInvocation> &invocations) {
+        Vector<DupCallbackInvocation> dupCallbackInvocations;
+
+        for (size_t i = 0; i < invocations.size(); i++) {
+            DupCallbackInvocation ci;
+            ci.mCallback = invocations[i].mCallback;
+            ci.mEventTime = invocations[i].mEventTime;
+            dupCallbackInvocations.push(ci);
+        }
+
+        return dupCallbackInvocations;
+    }
+#endif
 };
 
 #undef LOG_TAG
@@ -473,6 +617,10 @@ bool DispSync::addResyncSample(nsecs_t timestamp) {
         mFirstResyncSample = (mFirstResyncSample + 1) % MAX_RESYNC_SAMPLES;
     }
 
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+    mThread->updateSyncTime(mNumResyncSamples, timestamp);
+#endif
+
     updateModelLocked();
 
     if (mNumResyncSamplesSincePresent++ > MAX_RESYNC_SAMPLES_WITHOUT_PRESENT) {
@@ -521,6 +669,12 @@ void DispSync::setPeriod(nsecs_t period) {
     Mutex::Autolock lock(mMutex);
     mPeriod = period;
     mPhase = 0;
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (kTraceDetailedInfo) {
+        ATRACE_INT64("DispSync:Period", mPeriod);
+        ATRACE_INT64("DispSync:Phase", mPhase);
+    }
+#endif
     mReferenceTime = 0;
     mThread->updateModel(mPeriod, mPhase, mReferenceTime);
 }
@@ -531,9 +685,19 @@ nsecs_t DispSync::getPeriod() {
     return mPeriod;
 }
 
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+void DispSync::setResync(sp<Resync> resync) {
+    Mutex::Autolock lock(mMutex);
+    mThread->setResync(resync);
+}
+#endif
+
 void DispSync::updateModelLocked() {
     ALOGV("[%s] updateModelLocked %zu", mName, mNumResyncSamples);
     if (mNumResyncSamples >= MIN_RESYNC_SAMPLES_FOR_UPDATE) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_INT("VSYNC_CALIBRATION", 1);
+#endif
         ALOGV("[%s] Computing...", mName);
         nsecs_t durationSum = 0;
         nsecs_t minDuration = INT64_MAX;
@@ -588,6 +752,11 @@ void DispSync::updateModelLocked() {
         mThread->updateModel(mPeriod, mPhase, mReferenceTime);
         mModelUpdated = true;
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    else {
+        ATRACE_INT("VSYNC_CALIBRATION", 0);
+    }
+#endif
 }
 
 void DispSync::updateErrorLocked() {
@@ -694,6 +863,31 @@ void DispSync::dump(String8& result) const {
     }
 
     result.appendFormat("current monotonic time: %" PRId64 "\n", now);
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+    mThread->dump(result);
+#endif
 }
+
+#if defined(MTK_AOSP_ENHANCEMENT) && !defined(MTK_EMULATOR_SUPPORT)
+status_t DispSync::registerEventListener(nsecs_t offset, VSyncSource* vss, DispSync::Callback* cb, bool delay)
+{
+    return mThread->registerEventListener(offset, vss, cb, delay);
+}
+
+status_t DispSync::adjustVsyncPeriod(int32_t fps)
+{
+    return mThread->adjustVsyncPeriod(fps);
+}
+
+status_t DispSync::adjustVsyncOffset(nsecs_t offset)
+{
+    return mThread->adjustVsyncOffset(offset);
+}
+
+nsecs_t DispSync::getVsyncOffset() const
+{
+    return mThread->getVsyncOffset();
+}
+#endif
 
 } // namespace android

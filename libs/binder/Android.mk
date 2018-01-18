@@ -45,6 +45,9 @@ sources := \
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+LOCAL_CFLAGS += -D_MTK_ENG_BUILD_
+endif
 LOCAL_MODULE := libbinder
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils
 
@@ -60,6 +63,9 @@ LOCAL_CFLAGS += -Werror
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+LOCAL_CFLAGS += -D_MTK_ENG_BUILD_
+endif
 LOCAL_MODULE := libbinder
 LOCAL_STATIC_LIBRARIES += libutils
 LOCAL_SRC_FILES := $(sources)

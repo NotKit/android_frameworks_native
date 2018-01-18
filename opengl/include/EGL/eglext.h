@@ -639,6 +639,13 @@ typedef EGLAPI EGLBoolean (EGLAPIENTRYP PFNEGLQUERYTIMESTAMPSUPPORTEDANDROID) (E
 #endif
 #endif
 
+#ifdef MTK_AOSP_ENHANCEMENT
+void* egl_GVR_FrontBuffer(const EGLSurface surface);
+void* EGL_SEC_getClientBufferForFrontBuffer(EGLSurface surface);
+#endif
+
+#define EGL_IS_INVALID_MTK    0x43210001
+
 #ifdef __cplusplus
 }
 #endif

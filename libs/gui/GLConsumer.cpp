@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +47,10 @@
 #include <utils/String8.h>
 #include <utils/Trace.h>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <gralloc_mtk_defs.h>
+#endif
+
 EGLAPI const char* eglQueryStringImplementationANDROID(EGLDisplay dpy, EGLint name);
 #define CROP_EXT_STR "EGL_ANDROID_image_crop"
 #define PROT_CONTENT_EXT_STR "EGL_EXT_protected_content"
@@ -52,7 +61,11 @@ namespace android {
 // Macros for including the GLConsumer name in log messages
 #define GLC_LOGV(x, ...) ALOGV("[%s] " x, mName.string(), ##__VA_ARGS__)
 #define GLC_LOGD(x, ...) ALOGD("[%s] " x, mName.string(), ##__VA_ARGS__)
+#ifdef MTK_AOSP_ENHANCEMENT
+#define GLC_LOGI(x, ...) ALOGI("[%s] " x, mName.string(), ##__VA_ARGS__)
+#else
 //#define GLC_LOGI(x, ...) ALOGI("[%s] " x, mName.string(), ##__VA_ARGS__)
+#endif
 #define GLC_LOGW(x, ...) ALOGW("[%s] " x, mName.string(), ##__VA_ARGS__)
 #define GLC_LOGE(x, ...) ALOGE("[%s] " x, mName.string(), ##__VA_ARGS__)
 
@@ -420,6 +433,10 @@ status_t GLConsumer::updateAndReleaseLocked(const BufferItem& item,
         return err;
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // do not create EGLImage if secure buffer
+    if (!(mSlots[slot].mGraphicBuffer->getUsage() & GRALLOC_USAGE_SECURE)) {
+#endif
     // Ensure we have a valid EglImageKHR for the slot, creating an EglImage
     // if nessessary, for the gralloc buffer currently in the slot in
     // ConsumerBase.
@@ -433,6 +450,9 @@ status_t GLConsumer::updateAndReleaseLocked(const BufferItem& item,
                 mEglDisplay, EGL_NO_SYNC_KHR);
         return UNKNOWN_ERROR;
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    }
+#endif
 
     // Do whatever sync ops we need to do before releasing the old slot.
     if (slot != mCurrentTexture) {
@@ -505,6 +525,13 @@ status_t GLConsumer::bindTextureImageLocked() {
     while ((error = glGetError()) != GL_NO_ERROR) {
         GLC_LOGW("bindTextureImage: clearing GL error: %#04x", error);
     }
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    // do not bind texture if secure buffer
+    if (mCurrentTextureImage->graphicBuffer()->getUsage() & GRALLOC_USAGE_SECURE) {
+        return doGLFenceWaitLocked();
+    }
+#endif
 
     glBindTexture(mTexTarget, mTexName);
     if (mCurrentTexture == BufferQueue::INVALID_BUFFER_SLOT &&
@@ -591,7 +618,11 @@ void GLConsumer::setReleaseFence(const sp<Fence>& fence) {
 
 status_t GLConsumer::detachFromContext() {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    GLC_LOGI("detachFromContext");
+#else
     GLC_LOGV("detachFromContext");
+#endif
     Mutex::Autolock lock(mMutex);
 
     if (mAbandoned) {
@@ -636,7 +667,11 @@ status_t GLConsumer::detachFromContext() {
 
 status_t GLConsumer::attachToContext(uint32_t tex) {
     ATRACE_CALL();
+#ifdef MTK_AOSP_ENHANCEMENT
+    GLC_LOGI("attachToContext");
+#else
     GLC_LOGV("attachToContext");
+#endif
     Mutex::Autolock lock(mMutex);
 
     if (mAbandoned) {

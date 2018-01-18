@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,6 +78,10 @@ class EventThread : public Thread, private VSyncSource::Callback {
         virtual void requestNextVsync();    // asynchronous
         sp<EventThread> const mEventThread;
         sp<BitTube> const mChannel;
+#ifdef MTK_AOSP_ENHANCEMENT
+        // reserve client pid infomation
+        int32_t mPid;
+#endif
     };
 
 public:

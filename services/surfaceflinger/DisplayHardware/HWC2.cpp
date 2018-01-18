@@ -33,6 +33,11 @@
 #include <algorithm>
 #include <inttypes.h>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <hwc_priv.h>
+#include "mediatek/MtkHwc.h"
+#endif
+
 extern "C" {
     static void hotplug_hook(hwc2_callback_data_t callbackData,
             hwc2_display_t displayId, int32_t intConnected) {
@@ -852,6 +857,13 @@ Error Display::validate(uint32_t* outNumTypes, uint32_t* outNumRequests)
 {
     uint32_t numTypes = 0;
     uint32_t numRequests = 0;
+#ifdef MTK_AOSP_ENHANCEMENT
+#ifdef USE_HWC2
+    int32_t* value = reinterpret_cast<int32_t*>(&(android::MtkHwc::getInstance().getHwcValidateData()));
+    mDevice.mGetDisplayAttribute(
+        mDevice.mHwcDevice, 0, 0, HWC2_ATTRIBUTE_VALIDATE_DATA, value);
+#endif
+#endif
     int32_t intError = mDevice.mValidateDisplay(mDevice.mHwcDevice, mId,
             &numTypes, &numRequests);
     auto error = static_cast<Error>(intError);

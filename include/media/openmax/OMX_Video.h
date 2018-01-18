@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* ------------------------------------------------------------------
  * Copyright (C) 1998-2009 PacketVideo
  *
@@ -65,6 +70,10 @@ extern "C" {
 
 #include <OMX_IVCommon.h>
 
+//#ifndef ANDROID_DEFAULT_CODE
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <OMX_VideoExt.h>
+#endif
 
 /**
  * Enumeration used to define the possible video compression codings.
@@ -582,9 +591,21 @@ typedef struct OMX_VIDEO_PARAM_MPEG2TYPE {
     OMX_VIDEO_MPEG2LEVELTYPE eLevel;
 } OMX_VIDEO_PARAM_MPEG2TYPE;
 
-
+//#ifdef MTK_CAM_STEREO_CAMERA_SUPPORT //MTK_S3D_SUPPORT
 /**
- * MPEG-4 profile types, each profile indicates support for various
+ * Frame packing arrangement type for H.264
+ * Now only support frame sequence, side-by-side and top-and-bottom
+ */
+typedef enum OMX_VIDEO_H264FPATYPE {
+    OMX_VIDEO_H264FPA_NONE = -1,
+    OMX_VIDEO_H264FPA_2D = 0,
+    OMX_VIDEO_H264FPA_FRAMESEQUENCE = 1,
+    OMX_VIDEO_H264FPA_SIDEBYSIDE = 2,
+    OMX_VIDEO_H264FPA_TOPANDBOTTOM = 3,
+} OMX_VIDEO_H264FPATYPE;
+//#endif
+/** 
+ * MPEG-4 profile types, each profile indicates support for various 
  * performance bounds and different annexes.
  *
  * ENUMS:

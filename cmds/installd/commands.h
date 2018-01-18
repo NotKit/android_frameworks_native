@@ -52,6 +52,8 @@ int create_user_data(const char *uuid, userid_t userid, int user_serial, int fla
 int destroy_user_data(const char *uuid, userid_t userid, int flags);
 
 int rm_dex(const char *path, const char *instruction_set);
+/// M: Add method to delete dex of vendor/operator/app after uninstalled.
+int rm_dex_cache(const char *path, const char *instruction_set);
 int free_cache(const char *uuid, int64_t free_size);
 
 bool merge_profiles(uid_t uid, const char *pkgname);

@@ -1,3 +1,8 @@
+#
+# Copyright (C) 2014 MediaTek Inc.
+# Modification based on code covered by the mentioned copyright
+# and/or permission notice(s).
+#
 # Copyright (C) 2010 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,13 +61,32 @@ LOCAL_SHARED_LIBRARIES := \
 	libutils \
 	liblog
 
+# --- MediaTek -------------------------------------------------------------
+ifneq (, $(findstring MTK_AOSP_ENHANCEMENT, $(MTK_GLOBAL_CFLAGS)))
+	LOCAL_CPPFLAGS += -Wno-extra-semi -Wno-zero-length-array -Wno-gnu-statement-expression
+	LOCAL_CPPFLAGS += -D__STDC_FORMAT_MACROS
+
+	LOCAL_SRC_FILES += \
+		mediatek/Fence.cpp \
+		mediatek/IDumpTunnel.cpp \
+		mediatek/RefBaseDump.cpp
+
+	LOCAL_SHARED_LIBRARIES += \
+		libbinder
+
+ifneq ($(strip $(TARGET_BUILD_VARIANT)), eng)
+	LOCAL_CFLAGS += -DMTK_USER_BUILD
+endif
+endif
+# --------------------------------------------------------------------------
+
 ifneq ($(BOARD_FRAMEBUFFER_FORCE_FORMAT),)
 LOCAL_CFLAGS += -DFRAMEBUFFER_FORCE_FORMAT=$(BOARD_FRAMEBUFFER_FORCE_FORMAT)
 endif
 
 LOCAL_MODULE := libui
 
-include $(BUILD_SHARED_LIBRARY)
+include $(MTK_SHARED_LIBRARY)
 
 
 # Include subdirectory makefiles

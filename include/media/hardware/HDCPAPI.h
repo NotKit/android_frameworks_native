@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -88,6 +93,7 @@ struct HDCPModule {
     // Request to shutdown the active HDCP session.
     virtual status_t shutdownAsync() = 0;
 
+    // Get capability
     // Returns the capability bitmask of this HDCP session.
     virtual uint32_t getCaps() {
         return HDCP_CAPS_ENCRYPT;

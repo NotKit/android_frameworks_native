@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
 **
 ** Copyright 2009, The Android Open Source Project
 **
@@ -88,6 +93,10 @@ private:
 
     std::unique_ptr<Gralloc1::Loader> mLoader;
     std::unique_ptr<Gralloc1::Device> mDevice;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    bool mIsDumpCallStack;
+#endif
 };
 
 // ---------------------------------------------------------------------------

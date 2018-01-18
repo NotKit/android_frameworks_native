@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* ------------------------------------------------------------------
  * Copyright (C) 1998-2009 PacketVideo
  *
@@ -166,6 +171,7 @@ typedef enum OMX_COLOR_FORMATTYPE {
     OMX_COLOR_FormatYUV420Flexible = 0x7F420888,
 
     OMX_TI_COLOR_FormatYUV420PackedSemiPlanar = 0x7F000100,
+    OMX_MTK_COLOR_FormatBitStream = 0x7F000300,
     OMX_QCOM_COLOR_FormatYVU420SemiPlanar = 0x7FA30C00,
     OMX_QCOM_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka = 0x7FA30C03,
     OMX_SEC_COLOR_FormatNV12Tiled = 0x7FC00002,

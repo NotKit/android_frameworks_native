@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,10 @@
 #define LOG_TAG "BufferQueueCore"
 #define ATRACE_TAG ATRACE_TAG_GRAPHICS
 //#define LOG_NDEBUG 0
+#ifdef MTK_AOSP_ENHANCEMENT
+// this macro is used in BQ_LOG
+#define MTK_COMPILE_BUFFERQUEUECORE
+#endif
 
 #define EGL_EGLEXT_PROTOTYPES
 
@@ -35,6 +44,11 @@
 #include <gui/IProducerListener.h>
 #include <gui/ISurfaceComposer.h>
 #include <private/gui/ComposerService.h>
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <gui/mediatek/BufferQueueDump.h>
+#include <gui/mediatek/BufferQueueMonitor.h>
+#include <gui/mediatek/FreeMode.h>
+#endif
 
 namespace android {
 
@@ -108,9 +122,25 @@ BufferQueueCore::BufferQueueCore(const sp<IGraphicBufferAlloc>& allocator) :
             s++) {
         mUnusedSlots.push_front(s);
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    // init parameter, AOSP issue.
+    mLastQueuedSlot = INVALID_BUFFER_SLOT;
+    debugger.onConstructor(this, mConsumerName);
+    mIsFreeMode = false;
+#endif
 }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+BufferQueueCore::~BufferQueueCore() {
+    Mutex::Autolock lock(mMutex);
+    debugger.onDestructor();
+    if (mIsFreeMode) {
+        mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(false);
+    }
+}
+#else
 BufferQueueCore::~BufferQueueCore() {}
+#endif
 
 void BufferQueueCore::dump(String8& result, const char* prefix) const {
     Mutex::Autolock lock(mMutex);
@@ -118,12 +148,23 @@ void BufferQueueCore::dump(String8& result, const char* prefix) const {
     String8 fifo;
     Fifo::const_iterator current(mQueue.begin());
     while (current != mQueue.end()) {
+#ifdef MTK_AOSP_ENHANCEMENT
+        // adjust fifo log to improve readability
+        fifo.appendFormat("\n%s    %02d:%p crop=[%d,%d,%d,%d], "
+                "xform=0x%02x, time=%#" PRIx64 ", scale=%s",
+                prefix,
+                current->mSlot, current->mGraphicBuffer.get(),
+                current->mCrop.left, current->mCrop.top, current->mCrop.right,
+                current->mCrop.bottom, current->mTransform, current->mTimestamp,
+                BufferItem::scalingModeName(current->mScalingMode));
+#else
         fifo.appendFormat("%02d:%p crop=[%d,%d,%d,%d], "
                 "xform=0x%02x, time=%#" PRIx64 ", scale=%s\n",
                 current->mSlot, current->mGraphicBuffer.get(),
                 current->mCrop.left, current->mCrop.top, current->mCrop.right,
                 current->mCrop.bottom, current->mTransform, current->mTimestamp,
                 BufferItem::scalingModeName(current->mScalingMode));
+#endif
         ++current;
     }
 
@@ -135,6 +176,19 @@ void BufferQueueCore::dump(String8& result, const char* prefix) const {
             mDequeueBufferCannotBlock, mAsyncMode, mDefaultWidth,
             mDefaultHeight, mDefaultBufferFormat, mTransformHint, mQueue.size(),
             fifo.string());
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    // add more message for debug
+    result.appendFormat(
+            "%s this=%p (mConsumerName=%s, "
+            "mConnectedApi=%d, mConsumerUsageBits=%#x, "
+            "mId=%d, mPid=%d, producer=[%d:%s], consumer=[%d:%s])\n",
+            prefix, this, mConsumerName.string(),
+            mConnectedApi, mConsumerUsageBits,
+            debugger.mId, debugger.mPid,
+            debugger.mProducerPid, debugger.mProducerProcName.string(),
+            debugger.mConsumerPid, debugger.mConsumerProcName.string());
+#endif
 
     for (int s : mActiveBuffers) {
         const sp<GraphicBuffer>& buffer(mSlots[s].mGraphicBuffer);
@@ -164,6 +218,11 @@ void BufferQueueCore::dump(String8& result, const char* prefix) const {
         result.appendFormat("%s [%02d:%p] state=%-8s\n", prefix, s,
                 buffer.get(), mSlots[s].mBufferState.string());
     }
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    // to trigger static/continuous dump
+    debugger.onDump(result, String8::format("%s    ", prefix));
+#endif
 }
 
 int BufferQueueCore::getMinUndequeuedBufferCountLocked() const {
@@ -219,6 +278,9 @@ void BufferQueueCore::clearBufferSlotLocked(int slot) {
     if (mLastQueuedSlot == slot) {
         mLastQueuedSlot = INVALID_BUFFER_SLOT;
     }
+#ifdef MTK_AOSP_ENHANCEMENT
+    debugger.onFreeBufferLocked(slot);
+#endif
 }
 
 void BufferQueueCore::freeAllBuffersLocked() {

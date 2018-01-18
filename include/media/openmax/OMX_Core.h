@@ -1,3 +1,8 @@
+/*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
 /* ------------------------------------------------------------------
  * Copyright (C) 1998-2009 PacketVideo
  *
@@ -409,7 +414,18 @@ typedef struct OMX_PARAM_COMPONENTROLETYPE {
  */
 #define OMX_BUFFERFLAG_CODECCONFIG 0x00000080
 
+#ifdef MTK_AOSP_ENHANCEMENT
+// For multi slice bitstream
+#define OMX_BUFFERFLAG_MULTISLICE   0x00008000
+#endif
 
+// for 3D stereo
+#if 0 //def MTK_S3D_SUPPORT
+#define OMX_BUFFERFLAG_3D_SIDEBYSIDE   0x00000200
+#define OMX_BUFFERFLAG_3D_TOPANDBOTTOM 0x00000400
+#define OMX_BUFFERFLAG_2D              0x00001000
+#endif
+//
 
 /** @ingroup buf */
 typedef struct OMX_BUFFERHEADERTYPE
@@ -491,6 +507,15 @@ typedef struct OMX_PORT_PARAM_TYPE {
     OMX_U32 nPorts;             /**< The number of ports for this component */
     OMX_U32 nStartPortNumber;   /** first port number for this type of port */
 } OMX_PORT_PARAM_TYPE;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+/** @ingroup comp */
+typedef struct OMX_MTK_PLATFORM_PRIVATE {
+    OMX_U32 mM4UMVABufferPa;
+    OMX_U32 mM4UVABufferVa;
+    //add next private members
+} OMX_MTK_PLATFORM_PRIVATE;
+#endif //ANDROID_DEFAULT_CODE
 
 /** @ingroup comp */
 typedef enum OMX_EVENTTYPE

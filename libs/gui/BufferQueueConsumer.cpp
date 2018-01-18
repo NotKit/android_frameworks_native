@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +41,10 @@
 #include <binder/PermissionCache.h>
 #include <private/android_filesystem_config.h>
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include <gui/mediatek/FreeMode.h>
+#endif
+
 namespace android {
 
 BufferQueueConsumer::BufferQueueConsumer(const sp<BufferQueueCore>& core) :
@@ -47,7 +56,11 @@ BufferQueueConsumer::~BufferQueueConsumer() {}
 
 status_t BufferQueueConsumer::acquireBuffer(BufferItem* outBuffer,
         nsecs_t expectedPresent, uint64_t maxFrameNumber) {
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_CALL_PERF();
+#else
     ATRACE_CALL();
+#endif
 
     int numDroppedBuffers = 0;
     sp<IProducerListener> listener;
@@ -145,6 +158,15 @@ status_t BufferQueueConsumer::acquireBuffer(BufferItem* outBuffer,
                         desiredPresent, expectedPresent, mCore->mQueue.size());
 
                 if (!front->mIsStale) {
+#ifdef MTK_AOSP_ENHANCEMENT
+                    BQ_LOGI("acquireBuffer: slot %d is dropped, handle=%p",
+                        front->mSlot, mSlots[front->mSlot].mGraphicBuffer->handle);
+
+                    char ___traceBuf[128];
+                    snprintf(___traceBuf, sizeof(___traceBuf), "dropped:%d (h:%p)",
+                        front->mSlot, mSlots[front->mSlot].mGraphicBuffer->handle);
+                    android::ScopedTrace ___bufTracer(ATRACE_TAG, ___traceBuf);
+#endif
                     // Front buffer is still in mSlots, so mark the slot as free
                     mSlots[front->mSlot].mBufferState.freeQueued();
 
@@ -252,6 +274,17 @@ status_t BufferQueueConsumer::acquireBuffer(BufferItem* outBuffer,
             outBuffer->mGraphicBuffer = NULL;
         }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+        // 1. for dump, buffers holded by BufferQueueDump should be updated
+        // 2. to draw white debug line
+        mCore->debugger.onAcquire(
+            slot,
+            front->mGraphicBuffer,
+            front->mFence,
+            front->mTimestamp,
+            front->mTransform,
+            outBuffer);
+#endif
         mCore->mQueue.erase(front);
 
         // We might have freed a slot while dropping old buffers, or the producer
@@ -259,7 +292,11 @@ status_t BufferQueueConsumer::acquireBuffer(BufferItem* outBuffer,
         // decrease.
         mCore->mDequeueCondition.broadcast();
 
+#ifdef MTK_AOSP_ENHANCEMENT
+        ATRACE_INT_PERF(mCore->mConsumerName.string(), mCore->mQueue.size());
+#else
         ATRACE_INT(mCore->mConsumerName.string(), mCore->mQueue.size());
+#endif
         mCore->mOccupancyTracker.registerOccupancyChange(mCore->mQueue.size());
 
         VALIDATE_CONSISTENCY();
@@ -455,6 +492,10 @@ status_t BufferQueueConsumer::releaseBuffer(int slot, uint64_t frameNumber,
 
         mCore->mDequeueCondition.broadcast();
         VALIDATE_CONSISTENCY();
+#ifdef MTK_AOSP_ENHANCEMENT
+        // for dump, buffers holded by BufferQueueDump should be updated
+        mCore->debugger.onRelease(slot);
+#endif
     } // Autolock scope
 
     // Call back without lock held
@@ -474,8 +515,13 @@ status_t BufferQueueConsumer::connect(
         return BAD_VALUE;
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // to set process's name and pid of consumer
+    mCore->debugger.onConsumerConnect(consumerListener, controlledByApp);
+#else
     BQ_LOGV("connect: controlledByApp=%s",
             controlledByApp ? "true" : "false");
+#endif
 
     Mutex::Autolock lock(mCore->mMutex);
 
@@ -493,7 +539,16 @@ status_t BufferQueueConsumer::connect(
 status_t BufferQueueConsumer::disconnect() {
     ATRACE_CALL();
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    // to reset pid of the consumer
+    mCore->debugger.onConsumerDisconnectHead();
+    BQ_LOGI("disconnect(C)");
+    if (mCore->mIsFreeMode) {
+        mCore->mIsFreeMode = FreeModeDevice::getInstance().switchFreeMode(false);
+    }
+#else
     BQ_LOGV("disconnect");
+#endif
 
     Mutex::Autolock lock(mCore->mMutex);
 
@@ -508,6 +563,11 @@ status_t BufferQueueConsumer::disconnect() {
     mCore->freeAllBuffersLocked();
     mCore->mSharedBufferSlot = BufferQueueCore::INVALID_BUFFER_SLOT;
     mCore->mDequeueCondition.broadcast();
+#ifdef MTK_AOSP_ENHANCEMENT
+    // NOTE: this line must be placed after lock(mMutex)
+    // for dump, buffers holded by BufferQueueDump should be updated
+    mCore->debugger.onConsumerDisconnectTail();
+#endif
     return NO_ERROR;
 }
 
@@ -544,7 +604,11 @@ status_t BufferQueueConsumer::getReleasedBuffers(uint64_t *outSlotMask) {
         ++current;
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    BQ_LOGI("getReleasedBuffers: returning mask %#" PRIx64, mask);
+#else
     BQ_LOGV("getReleasedBuffers: returning mask %#" PRIx64, mask);
+#endif
     *outSlotMask = mask;
     return NO_ERROR;
 }
@@ -559,11 +623,23 @@ status_t BufferQueueConsumer::setDefaultBufferSize(uint32_t width,
         return BAD_VALUE;
     }
 
+#ifdef MTK_AOSP_ENHANCEMENT
+    BQ_LOGI("setDefaultBufferSize: width=%u height=%u", width, height);
+#else
     BQ_LOGV("setDefaultBufferSize: width=%u height=%u", width, height);
+#endif
 
     Mutex::Autolock lock(mCore->mMutex);
     mCore->mDefaultWidth = width;
     mCore->mDefaultHeight = height;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (mCore->mIsFreeMode) {
+        mCore->mDefaultWidth = height;
+        mCore->mDefaultHeight = width;
+    }
+#endif
+
     return NO_ERROR;
 }
 
@@ -679,6 +755,10 @@ void BufferQueueConsumer::setConsumerName(const String8& name) {
     Mutex::Autolock lock(mCore->mMutex);
     mCore->mConsumerName = name;
     mConsumerName = name;
+#ifdef MTK_AOSP_ENHANCEMENT
+    // update dump info and prepare for drawing debug line
+    mCore->debugger.onSetConsumerName(name);
+#endif
 }
 
 status_t BufferQueueConsumer::setDefaultBufferFormat(PixelFormat defaultFormat) {
@@ -711,6 +791,13 @@ status_t BufferQueueConsumer::setTransformHint(uint32_t hint) {
     BQ_LOGV("setTransformHint: %#x", hint);
     Mutex::Autolock lock(mCore->mMutex);
     mCore->mTransformHint = hint;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+    if (mCore->mIsFreeMode) {
+        mCore->mTransformHint = NATIVE_WINDOW_TRANSFORM_ROT_90;
+    }
+#endif
+
     return NO_ERROR;
 }
 

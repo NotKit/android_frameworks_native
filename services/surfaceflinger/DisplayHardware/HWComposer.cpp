@@ -1,4 +1,9 @@
 /*
+* Copyright (C) 2014 MediaTek Inc.
+* Modification based on code covered by the mentioned copyright
+* and/or permission notice(s).
+*/
+/*
  * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +58,10 @@
 #include "../Layer.h"           // needed only for debugging
 #include "../SurfaceFlinger.h"
 
+#ifdef MTK_AOSP_ENHANCEMENT
+#include "mediatek/MtkHwc.h"
+#endif
+
 namespace android {
 
 #define MIN_HWC_HEADER_VERSION HWC_HEADER_VERSION
@@ -77,6 +86,9 @@ HWComposer::HWComposer(const sp<SurfaceFlinger>& flinger)
     }
 
     loadHwcModule();
+#ifdef MTK_AOSP_ENHANCEMENT
+    MtkHwc::getInstance().setFlinger(flinger);
+#endif
 }
 
 HWComposer::~HWComposer() {}
@@ -139,6 +151,9 @@ void HWComposer::loadHwcModule()
         }
         mHwcDevice = std::make_unique<HWC2::Device>(
                 static_cast<hwc2_device_t*>(mAdapter.get()));
+#ifdef MTK_AOSP_ENHANCEMENT
+        MtkHwc::getInstance().setHwc(reinterpret_cast<hwc_composer_device_1_t*>(device));
+#endif
     }
 
     mRemainingHwcVirtualDisplays = mHwcDevice->getMaxVirtualDisplayCount();
@@ -248,7 +263,11 @@ void HWComposer::vsync(const std::shared_ptr<HWC2::Display>& display,
 
     char tag[16];
     snprintf(tag, sizeof(tag), "HW_VSYNC_%1u", disp);
+#ifdef MTK_AOSP_ENHANCEMENT
+    ATRACE_INT_PERF(tag, ++mVSyncCounts[disp] & 1);
+#else
     ATRACE_INT(tag, ++mVSyncCounts[disp] & 1);
+#endif
 
     mEventHandler->onVSyncReceived(disp, timestamp);
 }

@@ -620,7 +620,38 @@ private:
     bool mUpdateTexImageFailed; // This is only modified from the main thread
 
     bool mAutoRefresh;
+
     bool mFreezePositionUpdates;
+
+#ifdef MTK_AOSP_ENHANCEMENT
+public:
+    virtual bool isDim() const { return false; }
+private:
+    void setBufferCount();
+
+    // calculate tex coord according to display deivce composition phase
+    status_t adjustTexCoord(const sp<const DisplayDevice>& hw, Mesh::VertexArray<vec2> texCoords) const;
+
+#ifdef MTK_GLOBAL_PQ_SUPPORT
+public:
+    void checkLayerInWhiteList();
+
+    bool isInWhiteList() { return mInWhiteList; }
+
+    Rect getDisplayFrame() { return mDisplayFrame; }
+
+    void setPQForUI(const bool& need);
+
+    void setPQForVideo(const bool& need);
+private:
+    bool mUINeedPQ; // default not need
+    bool mVideoNeedPQ; // default need
+
+    bool mInWhiteList;
+
+    Rect mDisplayFrame;
+#endif
+#endif
 };
 
 // ---------------------------------------------------------------------------

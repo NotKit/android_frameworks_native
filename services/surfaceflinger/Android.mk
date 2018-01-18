@@ -142,11 +142,78 @@ LOCAL_SHARED_LIBRARIES := \
     libpowermanager \
     libvulkan
 
+# --- MediaTek ---------------------------------------------------------------
+ifneq (, $(findstring MTK_AOSP_ENHANCEMENT, $(MTK_GLOBAL_CFLAGS)))
+	LOCAL_SRC_FILES += \
+		mediatek/DisplayDevice.cpp \
+		mediatek/SurfaceFlinger.cpp \
+		mediatek/RenderEngine/RenderEngine.cpp \
+		mediatek/RenderEngine/GLES11RenderEngine.cpp \
+		mediatek/RenderEngine/GLES20RenderEngine.cpp \
+		mediatek/SurfaceFlingerWatchDog.cpp \
+		mediatek/Layer.cpp \
+		mediatek/MtkHwc.cpp \
+		mediatek/Resync.cpp
+
+ifeq ($(MTK_GLOBAL_PQ_SUPPORT),yes)
+    LOCAL_SRC_FILES += mediatek/SurfaceFlingerPQ.cpp
+    LOCAL_CFLAGS += -DMTK_GLOBAL_PQ_SUPPORT
+    LOCAL_C_INCLUDES += \
+        $(TOP)/$(MTK_ROOT)/hardware/pq/v2.0/include
+    LOCAL_SHARED_LIBRARIES += libpqservice
+endif
+
+ifneq ($(strip $(TARGET_BUILD_VARIANT)), eng)
+	LOCAL_CFLAGS += -DMTK_USER_BUILD
+endif
+
+ifeq ($(MTK_EMULATOR_SUPPORT), yes)
+	LOCAL_CFLAGS += -DMTK_EMULATOR_SUPPORT
+endif
+
+ifeq ($(FPGA_EARLY_PORTING), yes)
+	LOCAL_CFLAGS += -DFPGA_EARLY_PORTING
+endif
+
+ifeq ($(HAVE_AEE_FEATURE), yes)
+	LOCAL_CFLAGS += -DHAVE_AEE_FEATURE
+	LOCAL_SHARED_LIBRARIES += libaed
+endif
+
+	LOCAL_REQUIRED_MODULES += \
+		drm_disable_icon.png
+
+	LOCAL_SHARED_LIBRARIES += \
+		libskia \
+		libui_ext \
+		libselinux \
+		libgralloc_extra
+
+	LOCAL_C_INCLUDES += \
+		$(TOP)/$(MTK_ROOT)/hardware/hwcomposer/include \
+		$(TOP)/$(MTK_ROOT)/hardware/libgem/inc \
+		$(TOP)/$(MTK_ROOT)/hardware/gralloc_extra/include \
+		$(TOP)/$(MTK_ROOT)/external/aee/binary/inc
+
+	# these values shall sync with HWC
+	LOCAL_CFLAGS += -DMTK_HWC_THRESHOLD_VIDEO=3840*2160
+	LOCAL_CFLAGS += -DMTK_HWC_THRESHOLD_DISPLAY=3840*2160
+
+ifneq ($(MTK_EMULATOR_SUPPORT), yes)
+	LOCAL_SHARED_LIBRARIES += \
+		libged
+	LOCAL_C_INCLUDES += \
+		$(TOP)/$(MTK_ROOT)/hardware/gpu/include
+endif
+endif
+# ----------------------------------------------------------------------------
+
+
 LOCAL_MODULE := libsurfaceflinger
 
 LOCAL_CFLAGS += -Wall -Werror -Wunused -Wunreachable-code
 
-include $(BUILD_SHARED_LIBRARY)
+include $(MTK_SHARED_LIBRARY)
 
 ###############################################################
 # build surfaceflinger's executable
@@ -180,6 +247,20 @@ LOCAL_SHARED_LIBRARIES := \
     libdl
 
 LOCAL_WHOLE_STATIC_LIBRARIES := libsigchain
+
+# --- MediaTek ---------------------------------------------------------------
+ifneq (, $(findstring MTK_AOSP_ENHANCEMENT, $(MTK_GLOBAL_CFLAGS)))
+	LOCAL_C_INCLUDES := \
+		$(TOP)/$(MTK_ROOT)/hardware/hwcomposer/include \
+		$(TOP)/$(MTK_ROOT)/hardware/include \
+		$(TOP)/$(MTK_ROOT)/hardware/libgem/inc
+
+	LOCAL_SHARED_LIBRARIES += \
+		libgui_ext
+
+	LOCAL_CFLAGS += -DMTK_AOSP_ENHANCEMENT
+endif
+# ----------------------------------------------------------------------------
 
 LOCAL_MODULE := surfaceflinger
 

@@ -288,12 +288,16 @@ restart:
         if (st) return st;
         return new IPCThreadState;
     }
-    
+
     if (gShutdown) {
+#ifdef _MTK_ENG_BUILD_
+        IPCThreadState* st = (IPCThreadState*)pthread_getspecific(gTLS);
+        ALOGD("IPCThreadState 0x%p, gTLS:%d gHaveTLS:%d\n", &st, gTLS, gHaveTLS);
+#endif
         ALOGW("Calling IPCThreadState::self() during shutdown is dangerous, expect a crash.\n");
         return NULL;
     }
-    
+
     pthread_mutex_lock(&gTLSMutex);
     if (!gHaveTLS) {
         int key_create_value = pthread_key_create(&gTLS, threadDestructor);
@@ -330,6 +334,7 @@ void IPCThreadState::shutdown()
             delete st;
             pthread_setspecific(gTLS, NULL);
         }
+        pthread_key_delete(gTLS);
         gHaveTLS = false;
     }
 }
@@ -589,6 +594,9 @@ status_t IPCThreadState::transact(int32_t handle,
     
     if (err != NO_ERROR) {
         if (reply) reply->setError(err);
+#ifdef _MTK_ENG_BUILD_
+        ALOGD("transact return err=%d before ioctl\n", (int32_t)err);
+#endif
         return (mLastError = err);
     }
     
@@ -625,6 +633,11 @@ status_t IPCThreadState::transact(int32_t handle,
         err = waitForResponse(NULL, NULL);
     }
     
+#ifdef _MTK_ENG_BUILD_
+    if (err != NO_ERROR) {
+        ALOGD("transact return err=%d\n", (int32_t)err);
+    }
+#endif
     return err;
 }
 
@@ -734,6 +747,9 @@ status_t IPCThreadState::waitForResponse(Parcel *reply, status_t *acquireResult)
 {
     uint32_t cmd;
     int32_t err;
+#ifdef _MTK_ENG_BUILD_
+    cmd = 0;// initialze it for build error [-Werror=maybe-uninitialized]
+#endif
 
     while (1) {
         if ((err=talkWithDriver()) < NO_ERROR) break;
@@ -816,6 +832,9 @@ finish:
         if (acquireResult) *acquireResult = err;
         if (reply) reply->setError(err);
         mLastError = err;
+#ifdef _MTK_ENG_BUILD_
+        ALOGD("WFR got cmd %d err=%d\n", cmd, err);
+#endif
     }
     
     return err;
@@ -876,8 +895,12 @@ status_t IPCThreadState::talkWithDriver(bool doReceive)
 #if defined(__ANDROID__)
         if (ioctl(mProcess->mDriverFD, BINDER_WRITE_READ, &bwr) >= 0)
             err = NO_ERROR;
-        else
+        else {
+#ifdef _MTK_ENG_BUILD_
+            ALOGD("TWD: ioctl return errno %d\n", errno);
+#endif
             err = -errno;
+        }
 #else
         err = INVALID_OPERATION;
 #endif
@@ -1147,6 +1170,9 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
     case BR_DEAD_BINDER:
         {
             BpBinder *proxy = (BpBinder*)mIn.readPointer();
+#ifdef _MTK_ENG_BUILD_
+        ALOGD("[DN #5] BR_DEAD_BINDER cookie %p", proxy);
+#endif
             proxy->sendObituary();
             mOut.writeInt32(BC_DEAD_BINDER_DONE);
             mOut.writePointer((uintptr_t)proxy);
@@ -1170,12 +1196,19 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
         break;
         
     default:
+#ifdef _MTK_ENG_BUILD_
+        ALOGD("*** BAD COMMAND %d received from Binder driver\n", cmd);
+#else
         printf("*** BAD COMMAND %d received from Binder driver\n", cmd);
+#endif
         result = UNKNOWN_ERROR;
         break;
     }
 
     if (result != NO_ERROR) {
+#ifdef _MTK_ENG_BUILD_
+        ALOGD("EXECMD cmd %d return %d\n", cmd, (int32_t)result);
+#endif
         mLastError = result;
     }
     
